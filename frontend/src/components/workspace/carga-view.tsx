@@ -31,7 +31,6 @@ export function CargaView({
   onSaveField,
   onRestoreField,
   onRemoveDoc,
-  onPreviewDoc,
   onConfirmForValidation,
 }: {
   files: File[];
@@ -45,7 +44,6 @@ export function CargaView({
   onSaveField: (documentoId: string, clave: string, valor: string) => void;
   onRestoreField: (documentoId: string, clave: string) => void;
   onRemoveDoc: (documentoId: string) => void;
-  onPreviewDoc: (documentoId: string) => void;
   onConfirmForValidation: () => void;
 }) {
   const tiposPresentes = new Set(documentos.map((doc) => doc.tipoSeleccionado));
@@ -127,13 +125,13 @@ export function CargaView({
       ) : (
         <FieldReviewPanel
           documentos={documentos}
+          files={files}
           confirmedAt={confirmedAt}
           isConfirming={isConfirming}
           onChangeDocType={onChangeDocType}
           onSaveField={onSaveField}
           onRestoreField={onRestoreField}
           onRemoveDoc={onRemoveDoc}
-          onPreviewDoc={onPreviewDoc}
           onConfirmForValidation={onConfirmForValidation}
         />
       )}

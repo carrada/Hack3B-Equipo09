@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
   CheckCircle2,
   Code2,
-  Eye,
+  EyeOff,
   FileText,
+  PanelRight,
   Pencil,
   RotateCcw,
   SlidersHorizontal,
@@ -24,6 +25,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import StatusMark from "@/components/ui/StatusMark";
+import { DocumentViewerPane } from "@/components/workspace/document-viewer-pane";
 import {
   CAMPOS_POR_TIPO_DOCUMENTO,
   TIPO_DOCUMENTO_LABELS,
@@ -69,38 +71,69 @@ function getPlaceholder(tipo: TipoDocumento, clave: string): string {
   return def?.placeholder ?? "Escribe el valor verificado en el documento";
 }
 
+function countNeedsReview(doc: DocumentoRevision): number {
+  return doc.campos.filter(
+    (campo) => campo.estado === "no_detectado" || campo.estado === "dudoso",
+  ).length;
+}
+
 export function FieldReviewPanel({
   documentos,
+  files,
   confirmedAt,
   isConfirming,
   onChangeDocType,
   onSaveField,
   onRestoreField,
   onRemoveDoc,
-  onPreviewDoc,
   onConfirmForValidation,
 }: {
   documentos: DocumentoRevision[];
+  files: File[];
   confirmedAt: string | null;
   isConfirming: boolean;
   onChangeDocType: (documentoId: string, tipo: TipoDocumento) => void;
   onSaveField: (documentoId: string, clave: string, valor: string) => void;
   onRestoreField: (documentoId: string, clave: string) => void;
   onRemoveDoc: (documentoId: string) => void;
-  onPreviewDoc: (documentoId: string) => void;
   onConfirmForValidation: () => void;
 }) {
   const [filter, setFilter] = useState<FieldFilter>("todos");
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draftValue, setDraftValue] = useState("");
   const [showJsonPreview, setShowJsonPreview] = useState(false);
+  const [showViewer, setShowViewer] = useState(true);
+  const [activeId, setActiveId] = useState(documentos[0]?.documentoId ?? "");
+  const [viewerPage, setViewerPage] = useState<number | undefined>(undefined);
+  const viewerRef = useRef<HTMLDivElement>(null);
+
+  const resolvedId = documentos.some((doc) => doc.documentoId === activeId)
+    ? activeId
+    : (documentos[0]?.documentoId ?? "");
+
+  const activeIndex = Math.max(
+    0,
+    documentos.findIndex((doc) => doc.documentoId === resolvedId),
+  );
+  const activeDoc = documentos[activeIndex];
+  const activeFile = files[activeIndex];
 
   const summary = contarResumenRevision(documentos);
   const payloadPreview = construirPayloadRevalidacion(documentos);
 
+  const focusDocument = (documentoId: string, page?: number) => {
+    setActiveId(documentoId);
+    setViewerPage(page && page > 0 ? page : undefined);
+    setShowViewer(true);
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  };
+
   const startEditing = (documentoId: string, campo: CampoExtraido) => {
     setEditingKey(`${documentoId}::${campo.clave}`);
     setDraftValue(campo.valorActual ?? "");
+    focusDocument(documentoId, campo.evidencia?.pagina);
   };
 
   const cancelEditing = () => {
@@ -124,6 +157,11 @@ export function FieldReviewPanel({
     return true;
   };
 
+  const visibleFields = activeDoc ? activeDoc.campos.filter(matchesFilter) : [];
+  const typeChanged = activeDoc
+    ? activeDoc.tipoSeleccionado !== activeDoc.tipoDetectado
+    : false;
+
   return (
     <Card className="border-border bg-white">
       <CardHeader className="space-y-4">
@@ -131,15 +169,13 @@ export function FieldReviewPanel({
           <div className="space-y-1">
             <CardTitle className="flex items-center gap-2 text-base">
               <SlidersHorizontal className="h-4 w-4 text-primary" />
-              Revisión y edición opcional de campos
+              Revisión y edición junto al documento
             </CardTitle>
             <CardDescription>
-              Si la IA no detecta un campo o lo lee con baja confianza, puedes
-              corregirlo aquí antes o después de validar. Cada edición conserva
-              el valor original para auditoría legal.
+              El archivo se queda visible mientras completas o corriges un
+              campo. Nada se envía fuera de esta sesión.
             </CardDescription>
           </div>
-
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="border-border">
               {summary.camposCompletos}/{summary.totalCampos} con dato
@@ -149,94 +185,87 @@ export function FieldReviewPanel({
                 {summary.camposEditados} corrección(es)
               </Badge>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowViewer((prev) => !prev)}
+            >
+              {showViewer ? (
+                <>
+                  <EyeOff className="h-3.5 w-3.5" />
+                  Ocultar visor
+                </>
+              ) : (
+                <>
+                  <PanelRight className="h-3.5 w-3.5" />
+                  Mostrar visor
+                </>
+              )}
+            </Button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(
-              [
-                {
-                  id: "todos",
-                  label: `Todos (${summary.totalCampos})`,
-                },
-                {
-                  id: "por_revisar",
-                  label: `Por revisar (${summary.camposPorRevisar})`,
-                },
-                {
-                  id: "editados",
-                  label: `Corregidos (${summary.camposEditados})`,
-                },
-              ] as const
-            ).map((tab) => (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {documentos.map((doc) => {
+            const pending = countNeedsReview(doc);
+            const selected = doc.documentoId === activeDoc?.documentoId;
+            return (
               <button
-                key={tab.id}
+                key={doc.documentoId}
                 type="button"
-                onClick={() => setFilter(tab.id)}
+                onClick={() => focusDocument(doc.documentoId)}
                 className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-                  filter === tab.id
-                    ? "bg-primary text-primary-foreground"
-                    : "border border-border bg-white text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                  "flex min-w-[180px] max-w-[240px] flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors",
+                  selected
+                    ? "border-primary bg-secondary/70"
+                    : "border-border bg-white hover:bg-secondary/40",
                 )}
               >
-                {tab.label}
+                <span className="w-full truncate text-xs font-semibold text-foreground">
+                  {doc.nombreArchivo}
+                </span>
+                <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  {TIPO_DOCUMENTO_LABELS[doc.tipoSeleccionado]}
+                  {pending > 0 ? ` · ${pending} por revisar` : " · listo"}
+                </span>
               </button>
-            ))}
-          </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowJsonPreview((prev) => !prev)}
-            className="text-xs text-muted-foreground"
-          >
-            <Code2 className="h-3.5 w-3.5" />
-            {showJsonPreview
-              ? "Ocultar payload backend"
-              : "Ver payload JSON para backend"}
-          </Button>
+            );
+          })}
         </div>
       </CardHeader>
 
       <CardContent className="flex flex-col gap-5">
-        {documentos.map((doc) => {
-          const visibleFields = doc.campos.filter(matchesFilter);
-          const typeChanged = doc.tipoSeleccionado !== doc.tipoDetectado;
-
-          return (
-            <div
-              key={doc.documentoId}
-              className="overflow-hidden rounded-xl border border-border bg-white"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/40 px-4 py-3">
-                <div className="flex items-center gap-2.5 min-w-0">
+        {activeDoc && (
+          <div
+            className={cn(
+              "grid items-start gap-5",
+              showViewer && "xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]",
+            )}
+          >
+            <div className="flex min-w-0 flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-2.5">
                   <FileText className="h-4 w-4 shrink-0 text-primary" />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">
-                      {doc.nombreArchivo}
+                      {activeDoc.nombreArchivo}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {doc.tamanoBytes !== undefined
-                        ? `${(doc.tamanoBytes / (1024 * 1024)).toFixed(2)} MB · `
-                        : ""}
-                      {doc.confianzaClasificacion !== null
-                        ? `Clasificación IA ${Math.round(doc.confianzaClasificacion * 100)}%`
+                      {activeDoc.confianzaClasificacion !== null
+                        ? `Clasificación IA ${Math.round(activeDoc.confianzaClasificacion * 100)}%`
                         : "Listo para extracción del Agente 02"}
                     </p>
                   </div>
                 </div>
-
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>Tipo:</span>
                     <select
-                      value={doc.tipoSeleccionado}
+                      value={activeDoc.tipoSeleccionado}
                       onChange={(e) =>
                         onChangeDocType(
-                          doc.documentoId,
+                          activeDoc.documentoId,
                           e.target.value as TipoDocumento,
                         )
                       }
@@ -249,7 +278,6 @@ export function FieldReviewPanel({
                       ))}
                     </select>
                   </label>
-
                   {typeChanged && (
                     <Badge
                       variant="secondary"
@@ -258,24 +286,12 @@ export function FieldReviewPanel({
                       Tipo corregido
                     </Badge>
                   )}
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onPreviewDoc(doc.documentoId)}
-                    className="h-7 bg-white px-2.5 text-xs"
-                  >
-                    <Eye className="h-3.5 w-3.5 text-primary" />
-                    Ver archivo
-                  </Button>
-
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => onRemoveDoc(doc.documentoId)}
-                    aria-label={`Quitar ${doc.nombreArchivo}`}
+                    onClick={() => onRemoveDoc(activeDoc.documentoId)}
+                    aria-label={`Quitar ${activeDoc.nombreArchivo}`}
                     className="h-7 px-2 text-muted-foreground hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -283,14 +299,50 @@ export function FieldReviewPanel({
                 </div>
               </div>
 
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(
+                    [
+                      { id: "todos", label: "Todos" },
+                      { id: "por_revisar", label: "Por revisar" },
+                      { id: "editados", label: "Corregidos" },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setFilter(tab.id)}
+                      className={cn(
+                        "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                        filter === tab.id
+                          ? "bg-primary text-primary-foreground"
+                          : "border border-border bg-white text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowJsonPreview((prev) => !prev)}
+                  className="text-xs text-muted-foreground"
+                >
+                  <Code2 className="h-3.5 w-3.5" />
+                  {showJsonPreview ? "Ocultar payload" : "Ver payload JSON"}
+                </Button>
+              </div>
+
               {visibleFields.length === 0 ? (
-                <p className="px-4 py-4 text-xs text-muted-foreground">
+                <p className="rounded-xl border border-border px-4 py-4 text-xs text-muted-foreground">
                   No hay campos en este documento para el filtro seleccionado.
                 </p>
               ) : (
-                <ul className="divide-y divide-border">
+                <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
                   {visibleFields.map((campo) => {
-                    const rowKey = `${doc.documentoId}::${campo.clave}`;
+                    const rowKey = `${activeDoc.documentoId}::${campo.clave}`;
                     const isEditing = editingKey === rowKey;
                     const statusMeta = getFieldStatusMeta(campo.estado);
 
@@ -298,70 +350,75 @@ export function FieldReviewPanel({
                       <li
                         key={campo.clave}
                         className={cn(
-                          "flex flex-col gap-3 px-4 py-3.5 transition-colors sm:flex-row sm:items-start sm:justify-between",
+                          "flex flex-col gap-3 px-4 py-3.5",
                           campo.estado === "no_detectado" && "bg-red-50/30",
                           campo.estado === "dudoso" && "bg-amber-50/40",
+                          isEditing && "ring-2 ring-inset ring-primary/30",
                         )}
                       >
-                        <div className="flex-1 space-y-1.5 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-semibold text-foreground">
-                              {campo.etiqueta}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-foreground">
+                            {campo.etiqueta}
+                          </span>
+                          <Badge variant={statusMeta.variant}>
+                            {statusMeta.label}
+                            {campo.confianza !== null && !campo.editadoManualmente
+                              ? ` · ${Math.round(campo.confianza * 100)}%`
+                              : ""}
+                          </Badge>
+                          {campo.evidencia?.pagina ? (
+                            <span className="text-[11px] text-muted-foreground">
+                              Pág. {campo.evidencia.pagina}
                             </span>
-                            <Badge variant={statusMeta.variant}>
-                              {statusMeta.label}
-                              {campo.confianza !== null &&
-                              !campo.editadoManualmente
-                                ? ` · ${Math.round(campo.confianza * 100)}%`
-                                : ""}
-                            </Badge>
-                          </div>
+                          ) : null}
+                        </div>
 
-                          {isEditing ? (
-                            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center">
-                              <input
-                                type="text"
-                                value={draftValue}
-                                onChange={(e) => setDraftValue(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    commitEditing(doc.documentoId, campo.clave);
-                                  } else if (e.key === "Escape") {
-                                    e.preventDefault();
-                                    cancelEditing();
-                                  }
-                                }}
-                                placeholder={getPlaceholder(
-                                  doc.tipoSeleccionado,
-                                  campo.clave,
-                                )}
-                                autoFocus
-                                className="w-full flex-1 rounded-lg border border-primary/50 bg-white px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                              />
-                              <div className="flex items-center gap-1.5">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  onClick={() =>
-                                    commitEditing(doc.documentoId, campo.clave)
-                                  }
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                  Guardar
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={cancelEditing}
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                  Cancelar
-                                </Button>
-                              </div>
+                        {isEditing ? (
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <input
+                              type="text"
+                              value={draftValue}
+                              onChange={(e) => setDraftValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commitEditing(activeDoc.documentoId, campo.clave);
+                                } else if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  cancelEditing();
+                                }
+                              }}
+                              placeholder={getPlaceholder(
+                                activeDoc.tipoSeleccionado,
+                                campo.clave,
+                              )}
+                              autoFocus
+                              className="w-full flex-1 rounded-lg border border-primary/50 bg-white px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() =>
+                                  commitEditing(activeDoc.documentoId, campo.clave)
+                                }
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                                Guardar
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={cancelEditing}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                Cancelar
+                              </Button>
                             </div>
-                          ) : (
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div className="space-y-1">
                               {campo.valorActual ? (
                                 <p className="text-sm font-medium text-foreground">
@@ -370,11 +427,10 @@ export function FieldReviewPanel({
                               ) : (
                                 <p className="flex items-center gap-1.5 text-xs italic text-muted-foreground">
                                   <AlertCircle className="h-3.5 w-3.5 text-primary/70" />
-                                  Sin dato detectado. Puedes completarlo
-                                  opcionalmente con el botón Editar.
+                                  Sin dato detectado. Complétalo viendo el
+                                  documento al lado.
                                 </p>
                               )}
-
                               {campo.editadoManualmente && (
                                 <p className="text-[11px] text-muted-foreground">
                                   Valor original IA:{" "}
@@ -384,36 +440,32 @@ export function FieldReviewPanel({
                                 </p>
                               )}
                             </div>
-                          )}
-                        </div>
-
-                        {!isEditing && (
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                startEditing(doc.documentoId, campo)
-                              }
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              {campo.valorActual ? "Editar" : "Completar"}
-                            </Button>
-                            {campo.editadoManualmente && (
+                            <div className="flex shrink-0 items-center gap-1.5">
                               <Button
                                 type="button"
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
                                 onClick={() =>
-                                  onRestoreField(doc.documentoId, campo.clave)
+                                  startEditing(activeDoc.documentoId, campo)
                                 }
-                                title="Restaurar valor original de la IA"
                               >
-                                <RotateCcw className="h-3.5 w-3.5" />
-                                Restaurar
+                                <Pencil className="h-3.5 w-3.5" />
+                                {campo.valorActual ? "Editar" : "Completar"}
                               </Button>
-                            )}
+                              {campo.editadoManualmente && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    onRestoreField(activeDoc.documentoId, campo.clave)
+                                  }
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                  Restaurar
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </li>
@@ -422,8 +474,23 @@ export function FieldReviewPanel({
                 </ul>
               )}
             </div>
-          );
-        })}
+
+            {showViewer && (
+              <div ref={viewerRef} className="min-w-0 xl:sticky xl:top-6">
+                <DocumentViewerPane
+                  target={{
+                    documentoId: activeDoc.documentoId,
+                    nombreArchivo: activeDoc.nombreArchivo,
+                    tipoDocumento: activeDoc.tipoSeleccionado,
+                    file: activeFile,
+                    page: resolvedId === activeId ? viewerPage : undefined,
+                  }}
+                  viewportClassName="min-h-[420px] xl:max-h-[calc(100vh-8rem)]"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {showJsonPreview && (
           <div className="rounded-xl border border-border bg-secondary/30 p-4">
@@ -445,9 +512,7 @@ export function FieldReviewPanel({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-4 py-3.5">
           <div className="flex items-start gap-3">
             <StatusMark
-              status={
-                isConfirming ? "running" : confirmedAt ? "done" : "pending"
-              }
+              status={isConfirming ? "running" : confirmedAt ? "done" : "pending"}
               color="#E10600"
               doneColor="#22c55e"
               errorColor="#E10600"
@@ -470,7 +535,6 @@ export function FieldReviewPanel({
               </p>
             </div>
           </div>
-
           <Button
             type="button"
             disabled={isConfirming}

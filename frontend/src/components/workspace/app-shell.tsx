@@ -369,7 +369,13 @@ export function AppShell() {
 
       <main className="flex-1 bg-white">
         <header className="border-b border-border bg-white px-6 py-6 md:px-10">
-          <div className="mx-auto flex max-w-5xl flex-wrap items-start justify-between gap-4">
+          <div
+            className={`mx-auto flex flex-wrap items-start justify-between gap-4 ${
+              activeView === "carga" && reviewDocs.length > 0
+                ? "max-w-7xl"
+                : "max-w-5xl"
+            }`}
+          >
             <div className="space-y-1.5">
               <Badge variant="secondary" className="border-border text-primary">
                 {meta.badge}
@@ -384,7 +390,13 @@ export function AppShell() {
           </div>
         </header>
 
-        <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
+        <div
+          className={`mx-auto px-6 py-8 md:px-10 ${
+            activeView === "carga" && reviewDocs.length > 0
+              ? "max-w-7xl"
+              : "max-w-5xl"
+          }`}
+        >
           {activeView === "inicio" && (
             <InicioPitchView
               onStartDemo={() => navigateProgrammatically("carga")}
@@ -404,7 +416,6 @@ export function AppShell() {
               onSaveField={handleSaveField}
               onRestoreField={handleRestoreField}
               onRemoveDoc={handleRemoveDoc}
-              onPreviewDoc={setPreviewDocId}
               onConfirmForValidation={handleConfirmForValidation}
             />
           )}
