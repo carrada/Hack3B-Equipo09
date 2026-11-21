@@ -1,15 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   ClipboardCheck,
+  Clock,
+  Copy,
   Eye,
   FileSearch,
   GitCompareArrows,
   PencilLine,
   Play,
+  Printer,
   RotateCw,
+  ShieldAlert,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +28,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import LatticeLoader from "@/components/ui/LatticeLoader";
 import StatusMark, { type StatusMarkState } from "@/components/ui/StatusMark";
 import {
   DOCUMENTOS_MINIMOS_RETO_1,
@@ -33,32 +41,32 @@ export const AGENT_PIPELINE_STEPS = [
   {
     id: "clasificador",
     label: "01 · Clasificador Documental",
-    phase: "Ingesta",
+    runningMessage: "Clasificando documentos del expediente...",
   },
   {
     id: "extractor",
     label: "02 · Extractor Especializado",
-    phase: "Ingesta",
+    runningMessage: "Extrayendo campos clave por documento...",
   },
   {
     id: "reglas",
     label: "03 · Validador de Reglas",
-    phase: "Validación",
+    runningMessage: "Evaluando criterios y reglas normativas...",
   },
   {
     id: "cruzado",
     label: "04 · Validador Cruzado",
-    phase: "Validación",
+    runningMessage: "Contrastando datos entre documentos...",
   },
   {
     id: "evidencia",
     label: "05 · Verificador de Evidencia",
-    phase: "Trazabilidad",
+    runningMessage: "Anclando hallazgos a página y fragmento...",
   },
   {
     id: "dictaminador",
     label: "06 · Dictaminador y Explicador Legal",
-    phase: "Dictamen",
+    runningMessage: "Redactando recomendación y justificación...",
   },
 ] as const;
 
@@ -70,23 +78,93 @@ const STATUS_TEXT: Record<StatusMarkState, string> = {
   cancelled: "Omitido",
 };
 
+function buildFollowupRequestText(documentos: DocumentoRevision[]): string {
+  const tiposPresentes = new Set(documentos.map((doc) => doc.tipoSeleccionado));
+  const faltantes = DOCUMENTOS_MINIMOS_RETO_1.filter(
+    (tipo) => !tiposPresentes.has(tipo),
+  );
+  const camposSinDato = documentos.flatMap((doc) =>
+    doc.campos
+      .filter((campo) => !campo.valorActual)
+      .map((campo) => `${TIPO_DOCUMENTO_LABELS[doc.tipoSeleccionado]} · ${campo.etiqueta}`),
+  );
+  const ediciones = documentos.flatMap((doc) =>
+    doc.campos
+      .filter((campo) => campo.editadoManualmente)
+      .map(
+        (campo) =>
+          `${TIPO_DOCUMENTO_LABELS[doc.tipoSeleccionado]} · ${campo.etiqueta}: ${campo.valorActual ?? "Sin valor"}`,
+      ),
+  );
+
+  const lines: string[] = [
+    "Solicitud de seguimiento · Expediente Inmobiliario (Tiendas 3B)",
+    "",
+  ];
+
+  if (faltantes.length > 0) {
+    lines.push("Documentos mínimos faltantes (subsanables):");
+    for (const tipo of faltantes) {
+      lines.push(`- ${TIPO_DOCUMENTO_LABELS[tipo]}`);
+    }
+    lines.push("");
+  }
+
+  if (camposSinDato.length > 0) {
+    lines.push("Datos pendientes de confirmar o completar:");
+    for (const item of camposSinDato.slice(0, 12)) {
+      lines.push(`- ${item}`);
+    }
+    if (camposSinDato.length > 12) {
+      lines.push(`- ... y ${camposSinDato.length - 12} campo(s) adicional(es)`);
+    }
+    lines.push("");
+  }
+
+  if (ediciones.length > 0) {
+    lines.push("Ajustes capturados manualmente para verificación:");
+    for (const item of ediciones) {
+      lines.push(`- ${item}`);
+    }
+    lines.push("");
+  }
+
+  if (faltantes.length === 0 && camposSinDato.length === 0) {
+    lines.push(
+      "Expediente completo en sesión (4/4 tipos documentales). Listo para validación final del equipo legal.",
+    );
+  }
+
+  return lines.join("\n").trim();
+}
+
 export function ResultadoView({
   documentos,
   confirmedAt,
   isRunningAgents,
+  lastRunDurationSec,
   agentStatuses,
   onRunPipelinePreview,
   onRevalidateOnly,
+  onPreviewDoc,
 }: {
   documentos: DocumentoRevision[];
   confirmedAt: string | null;
   isRunningAgents: boolean;
+  lastRunDurationSec: number | null;
   agentStatuses: readonly StatusMarkState[];
   onRunPipelinePreview: () => void;
   onRevalidateOnly: () => void;
+  onPreviewDoc: (documentoId: string) => void;
 }) {
+  const [copied, setCopied] = useState(false);
+
   const summary = contarResumenRevision(documentos);
   const tiposPresentes = new Set(documentos.map((doc) => doc.tipoSeleccionado));
+  const faltantes = DOCUMENTOS_MINIMOS_RETO_1.filter(
+    (tipo) => !tiposPresentes.has(tipo),
+  );
+
   const manualEdits = documentos.flatMap((doc) =>
     doc.campos
       .filter((campo) => campo.editadoManualmente)
@@ -99,51 +177,155 @@ export function ResultadoView({
   );
 
   const completedAgents = agentStatuses.filter((s) => s === "done").length;
+  const runningIdx = agentStatuses.findIndex((s) => s === "running");
+  const runningMessage =
+    runningIdx >= 0
+      ? AGENT_PIPELINE_STEPS[runningIdx].runningMessage
+      : "Ejecutando agentes...";
+
+  const handleCopyFollowup = async () => {
+    const text = buildFollowupRequestText(documentos);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2200);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-white px-4 py-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Clock className="h-3.5 w-3.5 text-primary" />
+            Tiempo de análisis
+          </p>
+          <p className="mt-1 text-lg font-semibold text-foreground">
+            {isRunningAgents
+              ? "En curso..."
+              : lastRunDurationSec !== null
+                ? `${lastRunDurationSec.toFixed(1)} s`
+                : "Sin ejecutar"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-white px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Documentos mínimos
+          </p>
+          <p className="mt-1 text-lg font-semibold text-foreground">
+            {DOCUMENTOS_MINIMOS_RETO_1.length - faltantes.length} / 4
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-white px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Campos con dato
+          </p>
+          <p className="mt-1 text-lg font-semibold text-foreground">
+            {summary.camposCompletos} / {summary.totalCampos}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-white px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Correcciones manuales
+          </p>
+          <p className="mt-1 text-lg font-semibold text-foreground">
+            {summary.camposEditados}
+          </p>
+        </div>
+      </div>
+
+      {isRunningAgents && (
+        <Card className="border-primary/30 bg-white shadow-xs no-print">
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
+            <LatticeLoader
+              status="working"
+              label={runningMessage}
+              doneLabel="Completado en"
+              errorLabel="Error tras"
+              pattern="orbit"
+              grid={3}
+              shape="round"
+              color="#E10600"
+              doneColor="#22c55e"
+              errorColor="#E10600"
+              cellSize={6}
+              gap={2}
+              fontSize={14}
+              step={80}
+              idleOpacity={0.18}
+              showTimer
+            />
+            <Badge variant="secondary" className="border-border text-primary">
+              Agentes completados: {completedAgents}/6
+            </Badge>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-primary/25 bg-secondary/40">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
               <CardTitle className="text-lg text-secondary-foreground">
-                Dictamen inicial y nivel de confianza
+                Dictamen inicial y cierre de acción
               </CardTitle>
               <CardDescription>
-                Vista de Nivel 1: resume la recomendación y el motivo principal
-                para que gestor y abogado decidan en segundos.
+                Vista de Nivel 1: semáforo claro y acciones directas para gestor
+                y equipo legal.
               </CardDescription>
             </div>
-            <Badge
-              variant="outline"
-              className="border-primary/40 bg-white text-primary"
-            >
-              {isRunningAgents
-                ? `Ejecutando agentes (${completedAgents}/6)`
-                : confirmedAt
-                  ? "Paquete listo para backend"
-                  : "En espera de análisis"}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2 no-print">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCopyFollowup}
+                className="bg-white"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                    Solicitud copiada
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    Copiar pendientes (Gestor)
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handlePrint}
+                className="bg-white"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Imprimir / PDF (Legal)
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
-              Documentos en sesión:{" "}
+              Estado del expediente:{" "}
               <span className="font-semibold text-foreground">
-                {documentos.length}
-              </span>
-            </span>
-            <span>
-              Campos con dato:{" "}
-              <span className="font-semibold text-foreground">
-                {summary.camposCompletos}/{summary.totalCampos}
-              </span>
-            </span>
-            <span>
-              Correcciones manuales:{" "}
-              <span className="font-semibold text-foreground">
-                {summary.camposEditados}
+                {isRunningAgents
+                  ? `Procesando (${completedAgents}/6 agentes)`
+                  : confirmedAt
+                    ? `Confirmado a las ${confirmedAt} · listo para backend`
+                    : "En espera de conexión con backend"}
               </span>
             </span>
           </div>
@@ -165,8 +347,8 @@ export function ResultadoView({
                 Requiere revisión
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Existen condicionantes, diferencias parciales o baja confianza
-                que requieren validación legal.
+                Observaciones subsanables o condicionantes: no descarta un local
+                viable antes de validarlo.
               </p>
             </div>
             <div className="rounded-lg border border-red-200 bg-white p-3">
@@ -175,13 +357,85 @@ export function ResultadoView({
                 No cumple
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Faltan documentos clave, el giro es incompatible o se detectan
-                contradicciones bloqueantes.
+                Existe al menos un hallazgo bloqueante comprobado con evidencia
+                documental.
               </p>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="border-red-200 bg-white">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-base text-red-800">
+                <ShieldAlert className="h-4 w-4 text-primary" />
+                Hallazgos bloqueantes
+              </CardTitle>
+              <Badge variant="destructive">Impiden continuar</Badge>
+            </div>
+            <CardDescription>
+              Riesgos legales graves (ej. giro prohibido o inmuebles distintos).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-xs leading-relaxed text-muted-foreground">
+            Sin bloqueantes reportados todavía. Al conectar el backend de
+            LangChain, únicamente los impedimentos críticos aparecerán aquí con
+            cita directa al documento.
+          </CardContent>
+        </Card>
+
+        <Card className="border-amber-200 bg-white">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-base text-amber-900">
+                <Wrench className="h-4 w-4 text-amber-600" />
+                Observaciones subsanables
+              </CardTitle>
+              <Badge variant="warning">Se pueden corregir</Badge>
+            </div>
+            <CardDescription>
+              Faltantes o aclaraciones que el gestor puede solicitar sin
+              descartar el local.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs text-muted-foreground">
+            {faltantes.length === 0 && summary.camposPorRevisar === 0 ? (
+              <p>
+                No hay pendientes subsanables detectados en la sesión local.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {faltantes.map((tipo) => (
+                  <li key={tipo} className="flex items-start gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                    <span>
+                      Solicitar documento faltante:{" "}
+                      <strong className="font-medium text-foreground">
+                        {TIPO_DOCUMENTO_LABELS[tipo]}
+                      </strong>
+                    </span>
+                  </li>
+                ))}
+                {summary.camposPorRevisar > 0 && (
+                  <li className="flex items-start gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                    <span>
+                      {summary.camposPorRevisar} campo(s) sin dato o por
+                      confirmar en la pestaña{" "}
+                      <strong className="font-medium text-foreground">
+                        Carga
+                      </strong>
+                      .
+                    </span>
+                  </li>
+                )}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {manualEdits.length > 0 && (
         <Card className="border-border bg-white">
@@ -206,7 +460,7 @@ export function ResultadoView({
                 ({ documentoId, nombreArchivo, tipoDocumento, campo }) => (
                   <li
                     key={`${documentoId}-${campo.clave}`}
-                    className="flex flex-col gap-1.5 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-2 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
                       <p className="font-semibold text-foreground">
@@ -223,12 +477,16 @@ export function ResultadoView({
                         </span>
                       </p>
                     </div>
-                    <Badge
-                      variant="secondary"
-                      className="w-fit border-border text-primary"
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onPreviewDoc(documentoId)}
+                      className="h-7 w-fit text-xs no-print"
                     >
-                      Override activo
-                    </Badge>
+                      <Eye className="h-3.5 w-3.5 text-primary" />
+                      Comprobar archivo
+                    </Button>
                   </li>
                 ),
               )}
@@ -245,13 +503,17 @@ export function ResultadoView({
               Nivel 2 · Completitud documental (4/4)
             </CardTitle>
             <CardDescription>
-              Estado en vivo de los tipos documentales mínimos del expediente.
+              Abre cualquier archivo cargado para verificar evidencia al
+              instante.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2.5">
               {DOCUMENTOS_MINIMOS_RETO_1.map((tipo) => {
-                const presente = tiposPresentes.has(tipo);
+                const matchedDoc = documentos.find(
+                  (doc) => doc.tipoSeleccionado === tipo,
+                );
+                const presente = Boolean(matchedDoc);
                 const status: StatusMarkState = presente
                   ? "done"
                   : confirmedAt
@@ -272,13 +534,22 @@ export function ResultadoView({
                       fontSize={13}
                       strike={false}
                     />
-                    <span className="text-[11px] font-medium text-muted-foreground">
-                      {presente
-                        ? "Cargado"
-                        : confirmedAt
-                          ? "Faltante"
-                          : "Pendiente"}
-                    </span>
+                    {matchedDoc ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onPreviewDoc(matchedDoc.documentoId)}
+                        className="h-7 px-2 text-xs text-primary hover:bg-secondary no-print"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Ver
+                      </Button>
+                    ) : (
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        {confirmedAt ? "Faltante" : "Pendiente"}
+                      </span>
+                    )}
                   </li>
                 );
               })}
@@ -300,7 +571,8 @@ export function ResultadoView({
             Al conectarse con el backend de LangChain, cada discrepancia de
             dirección, propietario, superficie, número oficial o clave predial
             aparecerá aquí con qué documentos la presentan, qué valor encontró
-            el sistema en cada uno y la cita exacta de página y fragmento.
+            el sistema en cada uno, cita de página/fragmento y acceso directo al
+            visor del PDF.
           </CardContent>
         </Card>
       </div>
@@ -318,7 +590,7 @@ export function ResultadoView({
                 solo se re-ejecutan los Agentes 03–06 sin repetir lectura OCR.
               </CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 no-print">
               <Badge
                 variant="secondary"
                 className="border-border text-secondary-foreground"

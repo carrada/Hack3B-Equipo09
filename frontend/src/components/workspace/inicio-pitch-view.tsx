@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowRight,
   Briefcase,
   CheckCircle2,
   Eye,
@@ -14,6 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -145,9 +147,29 @@ const READING_LAYERS = [
   },
 ] as const;
 
-export function InicioPitchView() {
+export function InicioPitchView({
+  onStartDemo,
+}: {
+  onStartDemo: () => void;
+}) {
   return (
     <div className="flex flex-col gap-8">
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-primary/20 bg-secondary/45 px-5 py-4">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-foreground">
+            Listo para la demostración en vivo
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Pasa directo a cargar un expediente, revisar campos extraídos con
+            visor PDF y auditar el flujo de 6 agentes.
+          </p>
+        </div>
+        <Button type="button" onClick={onStartDemo}>
+          Probar con un expediente
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-2">
         <Card className="border-border bg-white">
           <CardHeader>

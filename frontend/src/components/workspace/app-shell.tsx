@@ -14,6 +14,10 @@ import BranchedMenu, {
 import { Badge } from "@/components/ui/badge";
 import type { StatusMarkState } from "@/components/ui/StatusMark";
 import { CargaView } from "@/components/workspace/carga-view";
+import {
+  DocumentPreviewDrawer,
+  type PreviewDocumentTarget,
+} from "@/components/workspace/document-preview-drawer";
 import { EntryLoader } from "@/components/workspace/entry-loader";
 import { ExpedienteGuideView } from "@/components/workspace/expediente-guide-view";
 import { InicioPitchView } from "@/components/workspace/inicio-pitch-view";
@@ -82,7 +86,7 @@ const VIEW_META: Record<
     badge: "Paso 04 · Dictamen y evidencia",
     title: "Resultado auditable del análisis",
     subtitle:
-      "Lectura en 3 niveles: recomendación inicial con confianza, hallazgos y discrepancias cruzadas, y traza abierta de los 6 agentes con cita al documento original.",
+      "Lectura en 3 niveles: recomendación inicial con confianza, hallazgos bloqueantes vs subsanables, visor directo del PDF y traza abierta de los 6 agentes.",
   },
 };
 
@@ -97,18 +101,37 @@ function isViewId(value: string): value is ViewId {
 
 export function AppShell() {
   const [activeView, setActiveView] = useState<ViewId>("inicio");
+  const [menuSyncVersion, setMenuSyncVersion] = useState(0);
   const [entries, setEntries] = useState<UploadedEntry[]>([]);
   const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
   const [isRunningAgents, setIsRunningAgents] = useState(false);
+  const [lastRunDurationSec, setLastRunDurationSec] = useState<number | null>(
+    null,
+  );
   const [agentStatuses, setAgentStatuses] = useState<StatusMarkState[]>(
     INITIAL_AGENT_STATUSES,
   );
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const timersRef = useRef<number[]>([]);
 
   const meta = VIEW_META[activeView];
   const uploadedFiles = entries.map((entry) => entry.file);
   const reviewDocs = entries.map((entry) => entry.revision);
   const reviewSummary = contarResumenRevision(reviewDocs);
+
+  const previewTarget: PreviewDocumentTarget | null = (() => {
+    if (!previewDocId) return null;
+    const match = entries.find(
+      (entry) => entry.revision.documentoId === previewDocId,
+    );
+    if (!match) return null;
+    return {
+      documentoId: match.revision.documentoId,
+      nombreArchivo: match.revision.nombreArchivo,
+      tipoDocumento: match.revision.tipoSeleccionado,
+      file: match.file,
+    };
+  })();
 
   const clearPipelineTimers = () => {
     for (const id of timersRef.current) {
@@ -121,8 +144,14 @@ export function AppShell() {
     return () => clearPipelineTimers();
   }, []);
 
+  const navigateProgrammatically = (targetView: ViewId) => {
+    setActiveView(targetView);
+    setMenuSyncVersion((prev) => prev + 1);
+  };
+
   const runAgentSequence = (startIndex: number) => {
     clearPipelineTimers();
+    const startedAt = performance.now();
     setIsRunningAgents(true);
 
     setAgentStatuses(
@@ -147,6 +176,7 @@ export function AppShell() {
 
         if (currentIdx === AGENT_PIPELINE_STEPS.length - 1) {
           setIsRunningAgents(false);
+          setLastRunDurationSec((performance.now() - startedAt) / 1000);
           setConfirmedAt(
             new Date().toLocaleTimeString("es-MX", {
               hour: "2-digit",
@@ -164,6 +194,7 @@ export function AppShell() {
   const resetRunState = () => {
     clearPipelineTimers();
     setIsRunningAgents(false);
+    setLastRunDurationSec(null);
     setConfirmedAt(null);
     setAgentStatuses(INITIAL_AGENT_STATUSES);
   };
@@ -187,12 +218,19 @@ export function AppShell() {
   };
 
   const handleRemoveByIndex = (index: number) => {
-    setEntries((prev) => prev.filter((_, idx) => idx !== index));
+    setEntries((prev) => {
+      const removed = prev[index];
+      if (removed && removed.revision.documentoId === previewDocId) {
+        setPreviewDocId(null);
+      }
+      return prev.filter((_, idx) => idx !== index);
+    });
     resetRunState();
   };
 
   const handleClearFiles = () => {
     setEntries([]);
+    setPreviewDocId(null);
     resetRunState();
   };
 
@@ -243,6 +281,9 @@ export function AppShell() {
   };
 
   const handleRemoveDoc = (documentoId: string) => {
+    if (previewDocId === documentoId) {
+      setPreviewDocId(null);
+    }
     setEntries((prev) =>
       prev.filter((entry) => entry.revision.documentoId !== documentoId),
     );
@@ -258,7 +299,12 @@ export function AppShell() {
   return (
     <div className="min-h-screen bg-white text-foreground flex flex-col md:flex-row">
       <EntryLoader />
-      <aside className="w-full shrink-0 border-b border-border bg-white md:w-72 md:border-r md:border-b-0">
+      <DocumentPreviewDrawer
+        target={previewTarget}
+        onClose={() => setPreviewDocId(null)}
+      />
+
+      <aside className="no-print w-full shrink-0 border-b border-border bg-white md:w-72 md:border-r md:border-b-0">
         <div className="flex h-full flex-col px-6 py-7">
           <div className="mb-8 flex items-center gap-3">
             <Image
@@ -281,9 +327,10 @@ export function AppShell() {
 
           <div className="flex-1">
             <BranchedMenu
+              key={`menu-${menuSyncVersion}`}
               items={MENU_ITEMS}
               defaultOpen={[0, 1]}
-              defaultActive="inicio"
+              defaultActive={activeView}
               onSelect={handleSelect}
               color="#7A0704"
               accentColor="#E10600"
@@ -338,7 +385,11 @@ export function AppShell() {
         </header>
 
         <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
-          {activeView === "inicio" && <InicioPitchView />}
+          {activeView === "inicio" && (
+            <InicioPitchView
+              onStartDemo={() => navigateProgrammatically("carga")}
+            />
+          )}
           {activeView === "expediente" && <ExpedienteGuideView />}
           {activeView === "carga" && (
             <CargaView
@@ -353,6 +404,7 @@ export function AppShell() {
               onSaveField={handleSaveField}
               onRestoreField={handleRestoreField}
               onRemoveDoc={handleRemoveDoc}
+              onPreviewDoc={setPreviewDocId}
               onConfirmForValidation={handleConfirmForValidation}
             />
           )}
@@ -361,9 +413,11 @@ export function AppShell() {
               documentos={reviewDocs}
               confirmedAt={confirmedAt}
               isRunningAgents={isRunningAgents}
+              lastRunDurationSec={lastRunDurationSec}
               agentStatuses={agentStatuses}
               onRunPipelinePreview={() => runAgentSequence(0)}
               onRevalidateOnly={() => runAgentSequence(2)}
+              onPreviewDoc={setPreviewDocId}
             />
           )}
         </div>

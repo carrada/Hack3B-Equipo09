@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   Code2,
+  Eye,
   FileText,
   Pencil,
   RotateCcw,
@@ -76,6 +77,7 @@ export function FieldReviewPanel({
   onSaveField,
   onRestoreField,
   onRemoveDoc,
+  onPreviewDoc,
   onConfirmForValidation,
 }: {
   documentos: DocumentoRevision[];
@@ -85,6 +87,7 @@ export function FieldReviewPanel({
   onSaveField: (documentoId: string, clave: string, valor: string) => void;
   onRestoreField: (documentoId: string, clave: string) => void;
   onRemoveDoc: (documentoId: string) => void;
+  onPreviewDoc: (documentoId: string) => void;
   onConfirmForValidation: () => void;
 }) {
   const [filter, setFilter] = useState<FieldFilter>("todos");
@@ -255,6 +258,17 @@ export function FieldReviewPanel({
                       Tipo corregido
                     </Badge>
                   )}
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onPreviewDoc(doc.documentoId)}
+                    className="h-7 bg-white px-2.5 text-xs"
+                  >
+                    <Eye className="h-3.5 w-3.5 text-primary" />
+                    Ver archivo
+                  </Button>
 
                   <Button
                     type="button"
