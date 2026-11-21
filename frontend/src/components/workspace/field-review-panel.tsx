@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import StatusMark from "@/components/ui/StatusMark";
 import {
   CAMPOS_POR_TIPO_DOCUMENTO,
   TIPO_DOCUMENTO_LABELS,
@@ -70,6 +71,7 @@ function getPlaceholder(tipo: TipoDocumento, clave: string): string {
 export function FieldReviewPanel({
   documentos,
   confirmedAt,
+  isConfirming,
   onChangeDocType,
   onSaveField,
   onRestoreField,
@@ -78,6 +80,7 @@ export function FieldReviewPanel({
 }: {
   documentos: DocumentoRevision[];
   confirmedAt: string | null;
+  isConfirming: boolean;
   onChangeDocType: (documentoId: string, tipo: TipoDocumento) => void;
   onSaveField: (documentoId: string, clave: string, valor: string) => void;
   onRestoreField: (documentoId: string, clave: string) => void;
@@ -426,24 +429,45 @@ export function FieldReviewPanel({
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-4 py-3.5">
-          <div className="space-y-0.5 text-xs">
-            <p className="font-semibold text-foreground">
-              {confirmedAt
-                ? "Campos confirmados para validación (Agentes 03–06)"
-                : "Edición opcional: puedes validar tal cual o confirmar tus ajustes"}
-            </p>
-            <p className="text-muted-foreground">
-              {confirmedAt
-                ? `Última confirmación local: ${confirmedAt}. Listo para enviar al backend.`
-                : "Al conectar tu backend, este botón re-ejecutará reglas, cruces y dictamen sin repetir el OCR."}
-            </p>
+          <div className="flex items-start gap-3">
+            <StatusMark
+              status={
+                isConfirming ? "running" : confirmedAt ? "done" : "pending"
+              }
+              color="#E10600"
+              doneColor="#22c55e"
+              errorColor="#E10600"
+              size={20}
+              strike={false}
+              className="mt-0.5"
+            />
+            <div className="space-y-0.5 text-xs">
+              <p className="font-semibold text-foreground">
+                {isConfirming
+                  ? "Preparando paquete y revalidando Agentes 03–06..."
+                  : confirmedAt
+                    ? "Campos confirmados para validación (Agentes 03–06)"
+                    : "Edición opcional: puedes validar tal cual o confirmar tus ajustes"}
+              </p>
+              <p className="text-muted-foreground">
+                {confirmedAt
+                  ? `Última confirmación local: ${confirmedAt}. Revisa el progreso en Resultado.`
+                  : "Al conectar tu backend, este botón re-ejecutará reglas, cruces y dictamen sin repetir el OCR."}
+              </p>
+            </div>
           </div>
 
-          <Button type="button" onClick={onConfirmForValidation}>
+          <Button
+            type="button"
+            disabled={isConfirming}
+            onClick={onConfirmForValidation}
+          >
             <CheckCircle2 className="h-4 w-4" />
-            {confirmedAt
-              ? "Actualizar confirmación"
-              : "Confirmar campos y continuar"}
+            {isConfirming
+              ? "Confirmando..."
+              : confirmedAt
+                ? "Revalidar ajustes"
+                : "Confirmar campos y continuar"}
           </Button>
         </div>
       </CardContent>

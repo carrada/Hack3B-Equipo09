@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckmarkCircle02Icon,
   CloudUploadIcon,
@@ -12,11 +12,15 @@ import BranchedMenu, {
   type BranchedMenuSectionItem,
 } from "@/components/menu/BranchedMenu";
 import { Badge } from "@/components/ui/badge";
+import type { StatusMarkState } from "@/components/ui/StatusMark";
 import { CargaView } from "@/components/workspace/carga-view";
 import { EntryLoader } from "@/components/workspace/entry-loader";
 import { ExpedienteGuideView } from "@/components/workspace/expediente-guide-view";
 import { InicioPitchView } from "@/components/workspace/inicio-pitch-view";
-import { ResultadoView } from "@/components/workspace/resultado-view";
+import {
+  AGENT_PIPELINE_STEPS,
+  ResultadoView,
+} from "@/components/workspace/resultado-view";
 import type { DocumentoRevision, TipoDocumento } from "@/lib/contracts";
 import {
   actualizarCampoDocumento,
@@ -32,6 +36,10 @@ interface UploadedEntry {
   file: File;
   revision: DocumentoRevision;
 }
+
+const INITIAL_AGENT_STATUSES: StatusMarkState[] = AGENT_PIPELINE_STEPS.map(
+  () => "pending",
+);
 
 const MENU_ITEMS: BranchedMenuSectionItem[] = [
   {
@@ -91,11 +99,74 @@ export function AppShell() {
   const [activeView, setActiveView] = useState<ViewId>("inicio");
   const [entries, setEntries] = useState<UploadedEntry[]>([]);
   const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
+  const [isRunningAgents, setIsRunningAgents] = useState(false);
+  const [agentStatuses, setAgentStatuses] = useState<StatusMarkState[]>(
+    INITIAL_AGENT_STATUSES,
+  );
+  const timersRef = useRef<number[]>([]);
 
   const meta = VIEW_META[activeView];
   const uploadedFiles = entries.map((entry) => entry.file);
   const reviewDocs = entries.map((entry) => entry.revision);
   const reviewSummary = contarResumenRevision(reviewDocs);
+
+  const clearPipelineTimers = () => {
+    for (const id of timersRef.current) {
+      window.clearTimeout(id);
+    }
+    timersRef.current = [];
+  };
+
+  useEffect(() => {
+    return () => clearPipelineTimers();
+  }, []);
+
+  const runAgentSequence = (startIndex: number) => {
+    clearPipelineTimers();
+    setIsRunningAgents(true);
+
+    setAgentStatuses(
+      AGENT_PIPELINE_STEPS.map((_, idx) =>
+        idx < startIndex ? "done" : idx === startIndex ? "running" : "pending",
+      ),
+    );
+
+    const stepDurationMs = 420;
+    const totalSteps = AGENT_PIPELINE_STEPS.length - startIndex;
+
+    for (let offset = 0; offset < totalSteps; offset++) {
+      const currentIdx = startIndex + offset;
+      const timerId = window.setTimeout(() => {
+        setAgentStatuses((prev) =>
+          prev.map((state, idx) => {
+            if (idx === currentIdx) return "done";
+            if (idx === currentIdx + 1) return "running";
+            return state;
+          }),
+        );
+
+        if (currentIdx === AGENT_PIPELINE_STEPS.length - 1) {
+          setIsRunningAgents(false);
+          setConfirmedAt(
+            new Date().toLocaleTimeString("es-MX", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          );
+        }
+      }, stepDurationMs * (offset + 1));
+
+      timersRef.current.push(timerId);
+    }
+  };
+
+  const resetRunState = () => {
+    clearPipelineTimers();
+    setIsRunningAgents(false);
+    setConfirmedAt(null);
+    setAgentStatuses(INITIAL_AGENT_STATUSES);
+  };
 
   const handleSelect = (value: string) => {
     if (isViewId(value)) {
@@ -112,17 +183,17 @@ export function AppShell() {
         revision: crearDocumentoRevisionDesdeArchivo(file, prev.length + idx),
       })),
     ]);
-    setConfirmedAt(null);
+    resetRunState();
   };
 
   const handleRemoveByIndex = (index: number) => {
     setEntries((prev) => prev.filter((_, idx) => idx !== index));
-    setConfirmedAt(null);
+    resetRunState();
   };
 
   const handleClearFiles = () => {
     setEntries([]);
-    setConfirmedAt(null);
+    resetRunState();
   };
 
   const handleChangeDocType = (documentoId: string, tipo: TipoDocumento) => {
@@ -175,16 +246,13 @@ export function AppShell() {
     setEntries((prev) =>
       prev.filter((entry) => entry.revision.documentoId !== documentoId),
     );
-    setConfirmedAt(null);
+    resetRunState();
   };
 
   const handleConfirmForValidation = () => {
-    const timestamp = new Date().toLocaleTimeString("es-MX", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    setConfirmedAt(timestamp);
+    const startFromValidationOnly =
+      agentStatuses[0] === "done" && agentStatuses[1] === "done";
+    runAgentSequence(startFromValidationOnly ? 2 : 0);
   };
 
   return (
@@ -277,6 +345,7 @@ export function AppShell() {
               files={uploadedFiles}
               documentos={reviewDocs}
               confirmedAt={confirmedAt}
+              isConfirming={isRunningAgents}
               onFilesAdded={handleFilesAdded}
               onRemoveByIndex={handleRemoveByIndex}
               onClear={handleClearFiles}
@@ -291,6 +360,10 @@ export function AppShell() {
             <ResultadoView
               documentos={reviewDocs}
               confirmedAt={confirmedAt}
+              isRunningAgents={isRunningAgents}
+              agentStatuses={agentStatuses}
+              onRunPipelinePreview={() => runAgentSequence(0)}
+              onRevalidateOnly={() => runAgentSequence(2)}
             />
           )}
         </div>

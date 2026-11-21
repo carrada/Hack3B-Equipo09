@@ -10,13 +10,20 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { FileUpload } from "@/components/ui/file-upload";
+import StatusMark from "@/components/ui/StatusMark";
 import { FieldReviewPanel } from "@/components/workspace/field-review-panel";
-import type { DocumentoRevision, TipoDocumento } from "@/lib/contracts";
+import {
+  DOCUMENTOS_MINIMOS_RETO_1,
+  TIPO_DOCUMENTO_LABELS,
+  type DocumentoRevision,
+  type TipoDocumento,
+} from "@/lib/contracts";
 
 export function CargaView({
   files,
   documentos,
   confirmedAt,
+  isConfirming,
   onFilesAdded,
   onRemoveByIndex,
   onClear,
@@ -29,6 +36,7 @@ export function CargaView({
   files: File[];
   documentos: DocumentoRevision[];
   confirmedAt: string | null;
+  isConfirming: boolean;
   onFilesAdded: (newFiles: File[]) => void;
   onRemoveByIndex: (index: number) => void;
   onClear: () => void;
@@ -38,6 +46,11 @@ export function CargaView({
   onRemoveDoc: (documentoId: string) => void;
   onConfirmForValidation: () => void;
 }) {
+  const tiposPresentes = new Set(documentos.map((doc) => doc.tipoSeleccionado));
+  const completados = DOCUMENTOS_MINIMOS_RETO_1.filter((t) =>
+    tiposPresentes.has(t),
+  ).length;
+
   return (
     <div className="flex flex-col gap-6">
       <Card className="border-border bg-white">
@@ -47,17 +60,39 @@ export function CargaView({
               Subir documentos del expediente
             </CardTitle>
             <Badge variant="secondary" className="border-border text-primary">
-              Clasificación automática al analizar
+              Checklist: {completados}/4 tipos mínimos
             </Badge>
           </div>
           <CardDescription>
-            Agrega uno o varios PDFs del inmueble (Escrituras, Predial,
-            Alineamiento y Número Oficial y Uso de Suelo). Puedes quitar
-            archivos individuales o limpiar toda la carga directamente dentro
-            del cargador.
+            Agrega uno o varios PDFs del inmueble. Puedes quitar archivos
+            individuales o limpiar toda la carga directamente dentro del
+            cargador.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2.5 rounded-xl border border-border bg-secondary/35 p-3.5 sm:grid-cols-2">
+            {DOCUMENTOS_MINIMOS_RETO_1.map((tipo) => {
+              const presente = tiposPresentes.has(tipo);
+              return (
+                <div
+                  key={tipo}
+                  className="flex items-center justify-between rounded-lg border border-border bg-white px-3 py-2"
+                >
+                  <StatusMark
+                    status={presente ? "done" : "pending"}
+                    label={TIPO_DOCUMENTO_LABELS[tipo]}
+                    color="#7A0704"
+                    doneColor="#22c55e"
+                    errorColor="#E10600"
+                    size={18}
+                    fontSize={13}
+                    strike
+                  />
+                </div>
+              );
+            })}
+          </div>
+
           <div className="w-full rounded-xl border border-dashed border-border bg-white">
             <FileUpload
               files={files}
@@ -91,6 +126,7 @@ export function CargaView({
         <FieldReviewPanel
           documentos={documentos}
           confirmedAt={confirmedAt}
+          isConfirming={isConfirming}
           onChangeDocType={onChangeDocType}
           onSaveField={onSaveField}
           onRestoreField={onRestoreField}
