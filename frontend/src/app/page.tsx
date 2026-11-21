@@ -1,5 +1,5 @@
-import { ExpedientesStarter } from "@/components/workspace/expedientes-starter";
+import { AppShell } from "@/components/workspace/app-shell";
 
 export default function HomePage() {
-  return <ExpedientesStarter />;
+  return <AppShell />;
 }
