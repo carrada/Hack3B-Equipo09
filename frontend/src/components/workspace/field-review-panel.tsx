@@ -24,7 +24,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import StatusMark from "@/components/ui/StatusMark";
+import type { StatusMarkState } from "@/components/ui/StatusMark";
+import { AgentThoughtLine } from "@/components/workspace/agent-thought-line";
 import { DocumentViewerPane } from "@/components/workspace/document-viewer-pane";
 import {
   CAMPOS_POR_TIPO_DOCUMENTO,
@@ -87,6 +88,8 @@ export function FieldReviewPanel({
   onRestoreField,
   onRemoveDoc,
   onConfirmForValidation,
+  agentStatuses,
+  analysisElapsedSec,
 }: {
   documentos: DocumentoRevision[];
   files: File[];
@@ -97,6 +100,8 @@ export function FieldReviewPanel({
   onRestoreField: (documentoId: string, clave: string) => void;
   onRemoveDoc: (documentoId: string) => void;
   onConfirmForValidation: () => void;
+  agentStatuses: readonly StatusMarkState[];
+  analysisElapsedSec: number | null;
 }) {
   const [filter, setFilter] = useState<FieldFilter>("todos");
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -509,32 +514,26 @@ export function FieldReviewPanel({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-4 py-3.5">
-          <div className="flex items-start gap-3">
-            <StatusMark
-              status={isConfirming ? "running" : confirmedAt ? "done" : "pending"}
-              color="#E10600"
-              doneColor="#22c55e"
-              errorColor="#E10600"
-              size={20}
-              strike={false}
-              className="mt-0.5"
-            />
-            <div className="space-y-0.5 text-xs">
-              <p className="font-semibold text-foreground">
-                {isConfirming
-                  ? "Preparando paquete y revalidando Agentes 03–06..."
-                  : confirmedAt
-                    ? "Campos confirmados para validación (Agentes 03–06)"
-                    : "Edición opcional: puedes validar tal cual o confirmar tus ajustes"}
-              </p>
-              <p className="text-muted-foreground">
-                {confirmedAt
-                  ? `Última confirmación local: ${confirmedAt}. Revisa el progreso en Resultado.`
-                  : "Al conectar tu backend, este botón re-ejecutará reglas, cruces y dictamen sin repetir el OCR."}
-              </p>
-            </div>
-          </div>
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-secondary/40 px-4 py-3.5">
+          <AgentThoughtLine
+            statuses={
+              isConfirming || confirmedAt
+                ? agentStatuses
+                : agentStatuses.map(() => "pending")
+            }
+            working={isConfirming}
+            elapsedSec={
+              isConfirming || confirmedAt ? analysisElapsedSec : null
+            }
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="max-w-xl text-xs leading-relaxed text-muted-foreground">
+            {isConfirming
+              ? "Los pasos de arriba son el rastro local. Cuando el backend esté listo, cada agente irá agregando el suyo."
+              : confirmedAt
+                ? `Última confirmación local: ${confirmedAt}. Puedes reabrir el rastro o ver el detalle en Resultado.`
+                : "Puedes validar tal cual o corregir antes. Al conectar el backend, este botón re-ejecuta reglas, cruces y dictamen sin repetir el OCR."}
+          </p>
           <Button
             type="button"
             disabled={isConfirming}
@@ -547,6 +546,7 @@ export function FieldReviewPanel({
                 ? "Revalidar ajustes"
                 : "Confirmar campos y continuar"}
           </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

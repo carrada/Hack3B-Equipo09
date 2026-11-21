@@ -28,47 +28,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import LatticeLoader from "@/components/ui/LatticeLoader";
 import StatusMark, { type StatusMarkState } from "@/components/ui/StatusMark";
+import { AgentThoughtLine } from "@/components/workspace/agent-thought-line";
 import {
   DOCUMENTOS_MINIMOS_RETO_1,
   TIPO_DOCUMENTO_LABELS,
   type DocumentoRevision,
 } from "@/lib/contracts";
+import { AGENT_PIPELINE_STEPS } from "@/lib/workspace/agent-pipeline";
 import { contarResumenRevision } from "@/lib/workspace/review-helpers";
 
-export const AGENT_PIPELINE_STEPS = [
-  {
-    id: "clasificador",
-    label: "01 · Clasificador Documental",
-    runningMessage: "Clasificando documentos del expediente...",
-  },
-  {
-    id: "extractor",
-    label: "02 · Extractor Especializado",
-    runningMessage: "Extrayendo campos clave por documento...",
-  },
-  {
-    id: "reglas",
-    label: "03 · Validador de Reglas",
-    runningMessage: "Evaluando criterios y reglas normativas...",
-  },
-  {
-    id: "cruzado",
-    label: "04 · Validador Cruzado",
-    runningMessage: "Contrastando datos entre documentos...",
-  },
-  {
-    id: "evidencia",
-    label: "05 · Verificador de Evidencia",
-    runningMessage: "Anclando hallazgos a página y fragmento...",
-  },
-  {
-    id: "dictaminador",
-    label: "06 · Dictaminador y Explicador Legal",
-    runningMessage: "Redactando recomendación y justificación...",
-  },
-] as const;
+export { AGENT_PIPELINE_STEPS };
 
 const STATUS_TEXT: Record<StatusMarkState, string> = {
   pending: "En espera",
@@ -143,6 +113,7 @@ export function ResultadoView({
   confirmedAt,
   isRunningAgents,
   lastRunDurationSec,
+  analysisElapsedSec,
   agentStatuses,
   onRunPipelinePreview,
   onRevalidateOnly,
@@ -152,6 +123,7 @@ export function ResultadoView({
   confirmedAt: string | null;
   isRunningAgents: boolean;
   lastRunDurationSec: number | null;
+  analysisElapsedSec: number | null;
   agentStatuses: readonly StatusMarkState[];
   onRunPipelinePreview: () => void;
   onRevalidateOnly: () => void;
@@ -177,11 +149,6 @@ export function ResultadoView({
   );
 
   const completedAgents = agentStatuses.filter((s) => s === "done").length;
-  const runningIdx = agentStatuses.findIndex((s) => s === "running");
-  const runningMessage =
-    runningIdx >= 0
-      ? AGENT_PIPELINE_STEPS[runningIdx].runningMessage
-      : "Ejecutando agentes...";
 
   const handleCopyFollowup = async () => {
     const text = buildFollowupRequestText(documentos);
@@ -208,7 +175,7 @@ export function ResultadoView({
           </p>
           <p className="mt-1 text-lg font-semibold text-foreground">
             {isRunningAgents
-              ? "En curso..."
+              ? `${(analysisElapsedSec ?? 0).toFixed(1)} s`
               : lastRunDurationSec !== null
                 ? `${lastRunDurationSec.toFixed(1)} s`
                 : "Sin ejecutar"}
@@ -243,33 +210,18 @@ export function ResultadoView({
         </div>
       </div>
 
-      {isRunningAgents && (
-        <Card className="border-primary/30 bg-white shadow-xs no-print">
-          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
-            <LatticeLoader
-              status="working"
-              label={runningMessage}
-              doneLabel="Completado en"
-              errorLabel="Error tras"
-              pattern="orbit"
-              grid={3}
-              shape="round"
-              color="#E10600"
-              doneColor="#22c55e"
-              errorColor="#E10600"
-              cellSize={6}
-              gap={2}
-              fontSize={14}
-              step={80}
-              idleOpacity={0.18}
-              showTimer
-            />
-            <Badge variant="secondary" className="border-border text-primary">
-              Agentes completados: {completedAgents}/6
-            </Badge>
-          </CardContent>
-        </Card>
-      )}
+      <Card className="border-primary/30 bg-white shadow-xs no-print">
+        <CardContent className="flex flex-wrap items-start justify-between gap-4 py-4">
+          <AgentThoughtLine
+            statuses={agentStatuses}
+            working={isRunningAgents}
+            elapsedSec={isRunningAgents ? analysisElapsedSec : lastRunDurationSec}
+          />
+          <Badge variant="secondary" className="border-border text-primary">
+            Agentes completados: {completedAgents}/6
+          </Badge>
+        </CardContent>
+      </Card>
 
       <Card className="border-primary/25 bg-secondary/40">
         <CardHeader>

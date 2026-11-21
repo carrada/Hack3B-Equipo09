@@ -21,11 +21,9 @@ import {
 import { EntryLoader } from "@/components/workspace/entry-loader";
 import { ExpedienteGuideView } from "@/components/workspace/expediente-guide-view";
 import { InicioPitchView } from "@/components/workspace/inicio-pitch-view";
-import {
-  AGENT_PIPELINE_STEPS,
-  ResultadoView,
-} from "@/components/workspace/resultado-view";
+import { ResultadoView } from "@/components/workspace/resultado-view";
 import type { DocumentoRevision, TipoDocumento } from "@/lib/contracts";
+import { AGENT_PIPELINE_STEPS } from "@/lib/workspace/agent-pipeline";
 import {
   actualizarCampoDocumento,
   cambiarTipoDocumentoRevision,
@@ -108,6 +106,10 @@ export function AppShell() {
   const [lastRunDurationSec, setLastRunDurationSec] = useState<number | null>(
     null,
   );
+  const [analysisElapsedSec, setAnalysisElapsedSec] = useState<number | null>(
+    null,
+  );
+  const runStartedAtRef = useRef<number | null>(null);
   const [agentStatuses, setAgentStatuses] = useState<StatusMarkState[]>(
     INITIAL_AGENT_STATUSES,
   );
@@ -144,6 +146,16 @@ export function AppShell() {
     return () => clearPipelineTimers();
   }, []);
 
+  useEffect(() => {
+    if (!isRunningAgents) return;
+    const id = window.setInterval(() => {
+      const startedAt = runStartedAtRef.current;
+      if (startedAt === null) return;
+      setAnalysisElapsedSec((performance.now() - startedAt) / 1000);
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [isRunningAgents]);
+
   const navigateProgrammatically = (targetView: ViewId) => {
     setActiveView(targetView);
     setMenuSyncVersion((prev) => prev + 1);
@@ -152,6 +164,8 @@ export function AppShell() {
   const runAgentSequence = (startIndex: number) => {
     clearPipelineTimers();
     const startedAt = performance.now();
+    runStartedAtRef.current = startedAt;
+    setAnalysisElapsedSec(0);
     setIsRunningAgents(true);
 
     setAgentStatuses(
@@ -175,8 +189,10 @@ export function AppShell() {
         );
 
         if (currentIdx === AGENT_PIPELINE_STEPS.length - 1) {
+          const elapsed = (performance.now() - startedAt) / 1000;
           setIsRunningAgents(false);
-          setLastRunDurationSec((performance.now() - startedAt) / 1000);
+          setAnalysisElapsedSec(elapsed);
+          setLastRunDurationSec(elapsed);
           setConfirmedAt(
             new Date().toLocaleTimeString("es-MX", {
               hour: "2-digit",
@@ -195,6 +211,8 @@ export function AppShell() {
     clearPipelineTimers();
     setIsRunningAgents(false);
     setLastRunDurationSec(null);
+    setAnalysisElapsedSec(null);
+    runStartedAtRef.current = null;
     setConfirmedAt(null);
     setAgentStatuses(INITIAL_AGENT_STATUSES);
   };
@@ -417,6 +435,8 @@ export function AppShell() {
               onRestoreField={handleRestoreField}
               onRemoveDoc={handleRemoveDoc}
               onConfirmForValidation={handleConfirmForValidation}
+              agentStatuses={agentStatuses}
+              analysisElapsedSec={analysisElapsedSec}
             />
           )}
           {activeView === "resultado" && (
@@ -425,6 +445,7 @@ export function AppShell() {
               confirmedAt={confirmedAt}
               isRunningAgents={isRunningAgents}
               lastRunDurationSec={lastRunDurationSec}
+              analysisElapsedSec={analysisElapsedSec}
               agentStatuses={agentStatuses}
               onRunPipelinePreview={() => runAgentSequence(0)}
               onRevalidateOnly={() => runAgentSequence(2)}

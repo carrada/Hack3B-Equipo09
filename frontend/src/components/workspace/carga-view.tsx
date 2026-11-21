@@ -12,6 +12,7 @@ import {
 import { FileUpload } from "@/components/ui/file-upload";
 import StatusMark from "@/components/ui/StatusMark";
 import { FieldReviewPanel } from "@/components/workspace/field-review-panel";
+import type { StatusMarkState } from "@/components/ui/StatusMark";
 import {
   DOCUMENTOS_MINIMOS_RETO_1,
   TIPO_DOCUMENTO_LABELS,
@@ -32,6 +33,8 @@ export function CargaView({
   onRestoreField,
   onRemoveDoc,
   onConfirmForValidation,
+  agentStatuses,
+  analysisElapsedSec,
 }: {
   files: File[];
   documentos: DocumentoRevision[];
@@ -45,6 +48,8 @@ export function CargaView({
   onRestoreField: (documentoId: string, clave: string) => void;
   onRemoveDoc: (documentoId: string) => void;
   onConfirmForValidation: () => void;
+  agentStatuses: readonly StatusMarkState[];
+  analysisElapsedSec: number | null;
 }) {
   const tiposPresentes = new Set(documentos.map((doc) => doc.tipoSeleccionado));
   const completados = DOCUMENTOS_MINIMOS_RETO_1.filter((t) =>
@@ -133,6 +138,8 @@ export function CargaView({
           onRestoreField={onRestoreField}
           onRemoveDoc={onRemoveDoc}
           onConfirmForValidation={onConfirmForValidation}
+          agentStatuses={agentStatuses}
+          analysisElapsedSec={analysisElapsedSec}
         />
       )}
     </div>
