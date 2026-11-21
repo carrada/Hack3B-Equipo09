@@ -1,8 +1,7 @@
 "use client";
 
-import { Info, Trash2 } from "lucide-react";
+import { Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -15,10 +14,11 @@ import { FieldReviewPanel } from "@/components/workspace/field-review-panel";
 import type { DocumentoRevision, TipoDocumento } from "@/lib/contracts";
 
 export function CargaView({
+  files,
   documentos,
-  resetKey,
   confirmedAt,
   onFilesAdded,
+  onRemoveByIndex,
   onClear,
   onChangeDocType,
   onSaveField,
@@ -26,10 +26,11 @@ export function CargaView({
   onRemoveDoc,
   onConfirmForValidation,
 }: {
+  files: File[];
   documentos: DocumentoRevision[];
-  resetKey: number;
   confirmedAt: string | null;
   onFilesAdded: (newFiles: File[]) => void;
+  onRemoveByIndex: (index: number) => void;
   onClear: () => void;
   onChangeDocType: (documentoId: string, tipo: TipoDocumento) => void;
   onSaveField: (documentoId: string, clave: string, valor: string) => void;
@@ -45,27 +46,26 @@ export function CargaView({
             <CardTitle className="text-base">
               Subir documentos del expediente
             </CardTitle>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="border-border text-primary">
-                Clasificación automática al analizar
-              </Badge>
-              {documentos.length > 0 && (
-                <Button variant="outline" size="sm" onClick={onClear}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Limpiar todo
-                </Button>
-              )}
-            </div>
+            <Badge variant="secondary" className="border-border text-primary">
+              Clasificación automática al analizar
+            </Badge>
           </div>
           <CardDescription>
             Agrega uno o varios PDFs del inmueble (Escrituras, Predial,
-            Alineamiento y Número Oficial y Uso de Suelo). Al cargarlos, podrás
-            revisar y ajustar cualquier campo si la detección necesita ayuda.
+            Alineamiento y Número Oficial y Uso de Suelo). Puedes quitar
+            archivos individuales o limpiar toda la carga directamente dentro
+            del cargador.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="w-full rounded-xl border border-dashed border-border bg-white">
-            <FileUpload key={resetKey} onChange={onFilesAdded} />
+            <FileUpload
+              files={files}
+              multiple
+              onChange={onFilesAdded}
+              onRemove={onRemoveByIndex}
+              onClear={onClear}
+            />
           </div>
         </CardContent>
       </Card>

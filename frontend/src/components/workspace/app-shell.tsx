@@ -28,6 +28,11 @@ import {
 
 type ViewId = "inicio" | "expediente" | "carga" | "resultado";
 
+interface UploadedEntry {
+  file: File;
+  revision: DocumentoRevision;
+}
+
 const MENU_ITEMS: BranchedMenuSectionItem[] = [
   {
     label: "General",
@@ -84,11 +89,12 @@ function isViewId(value: string): value is ViewId {
 
 export function AppShell() {
   const [activeView, setActiveView] = useState<ViewId>("inicio");
-  const [reviewDocs, setReviewDocs] = useState<DocumentoRevision[]>([]);
-  const [uploadResetKey, setUploadResetKey] = useState(0);
+  const [entries, setEntries] = useState<UploadedEntry[]>([]);
   const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
 
   const meta = VIEW_META[activeView];
+  const uploadedFiles = entries.map((entry) => entry.file);
+  const reviewDocs = entries.map((entry) => entry.revision);
   const reviewSummary = contarResumenRevision(reviewDocs);
 
   const handleSelect = (value: string) => {
@@ -99,27 +105,35 @@ export function AppShell() {
 
   const handleFilesAdded = (newFiles: File[]) => {
     if (newFiles.length === 0) return;
-    setReviewDocs((prev) => [
+    setEntries((prev) => [
       ...prev,
-      ...newFiles.map((file, idx) =>
-        crearDocumentoRevisionDesdeArchivo(file, prev.length + idx),
-      ),
+      ...newFiles.map((file, idx) => ({
+        file,
+        revision: crearDocumentoRevisionDesdeArchivo(file, prev.length + idx),
+      })),
     ]);
     setConfirmedAt(null);
   };
 
-  const handleClearFiles = () => {
-    setReviewDocs([]);
+  const handleRemoveByIndex = (index: number) => {
+    setEntries((prev) => prev.filter((_, idx) => idx !== index));
     setConfirmedAt(null);
-    setUploadResetKey((prev) => prev + 1);
+  };
+
+  const handleClearFiles = () => {
+    setEntries([]);
+    setConfirmedAt(null);
   };
 
   const handleChangeDocType = (documentoId: string, tipo: TipoDocumento) => {
-    setReviewDocs((prev) =>
-      prev.map((doc) =>
-        doc.documentoId === documentoId
-          ? cambiarTipoDocumentoRevision(doc, tipo)
-          : doc,
+    setEntries((prev) =>
+      prev.map((entry) =>
+        entry.revision.documentoId === documentoId
+          ? {
+              ...entry,
+              revision: cambiarTipoDocumentoRevision(entry.revision, tipo),
+            }
+          : entry,
       ),
     );
     setConfirmedAt(null);
@@ -130,30 +144,36 @@ export function AppShell() {
     clave: string,
     valor: string,
   ) => {
-    setReviewDocs((prev) =>
-      prev.map((doc) =>
-        doc.documentoId === documentoId
-          ? actualizarCampoDocumento(doc, clave, valor)
-          : doc,
+    setEntries((prev) =>
+      prev.map((entry) =>
+        entry.revision.documentoId === documentoId
+          ? {
+              ...entry,
+              revision: actualizarCampoDocumento(entry.revision, clave, valor),
+            }
+          : entry,
       ),
     );
     setConfirmedAt(null);
   };
 
   const handleRestoreField = (documentoId: string, clave: string) => {
-    setReviewDocs((prev) =>
-      prev.map((doc) =>
-        doc.documentoId === documentoId
-          ? restaurarCampoDocumento(doc, clave)
-          : doc,
+    setEntries((prev) =>
+      prev.map((entry) =>
+        entry.revision.documentoId === documentoId
+          ? {
+              ...entry,
+              revision: restaurarCampoDocumento(entry.revision, clave),
+            }
+          : entry,
       ),
     );
     setConfirmedAt(null);
   };
 
   const handleRemoveDoc = (documentoId: string) => {
-    setReviewDocs((prev) =>
-      prev.filter((doc) => doc.documentoId !== documentoId),
+    setEntries((prev) =>
+      prev.filter((entry) => entry.revision.documentoId !== documentoId),
     );
     setConfirmedAt(null);
   };
@@ -254,10 +274,11 @@ export function AppShell() {
           {activeView === "expediente" && <ExpedienteGuideView />}
           {activeView === "carga" && (
             <CargaView
+              files={uploadedFiles}
               documentos={reviewDocs}
-              resetKey={uploadResetKey}
               confirmedAt={confirmedAt}
               onFilesAdded={handleFilesAdded}
+              onRemoveByIndex={handleRemoveByIndex}
               onClear={handleClearFiles}
               onChangeDocType={handleChangeDocType}
               onSaveField={handleSaveField}

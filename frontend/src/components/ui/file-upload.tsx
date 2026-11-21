@@ -2,7 +2,7 @@
 import { cn } from "@/lib/utils";
 import React, { useRef, useState } from "react";
 import { motion } from "motion/react";
-import { IconUpload } from "@tabler/icons-react";
+import { IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { useDropzone } from "react-dropzone";
 
 const mainVariant = {
@@ -27,16 +27,58 @@ const secondaryVariant = {
 };
 
 export const FileUpload = ({
+  files: controlledFiles,
+  multiple = true,
   onChange,
+  onRemove,
+  onClear,
 }: {
+  files?: File[];
+  multiple?: boolean;
   onChange?: (files: File[]) => void;
+  onRemove?: (index: number) => void;
+  onClear?: () => void;
 }) => {
-  const [files, setFiles] = useState<File[]>([]);
+  const [internalFiles, setInternalFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isControlled = controlledFiles !== undefined;
+  const files = isControlled ? controlledFiles : internalFiles;
+
+  const resetNativeInput = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const handleFileChange = (newFiles: File[]) => {
-    setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+    if (newFiles.length === 0) return;
+    if (!isControlled) {
+      setInternalFiles((prevFiles) => [...prevFiles, ...newFiles]);
+    }
     onChange?.(newFiles);
+    resetNativeInput();
+  };
+
+  const handleRemoveFile = (
+    e: React.MouseEvent<HTMLButtonElement>,
+    idx: number,
+  ) => {
+    e.stopPropagation();
+    if (!isControlled) {
+      setInternalFiles((prevFiles) => prevFiles.filter((_, i) => i !== idx));
+    }
+    onRemove?.(idx);
+    resetNativeInput();
+  };
+
+  const handleClearAll = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (!isControlled) {
+      setInternalFiles([]);
+    }
+    onClear?.();
+    resetNativeInput();
   };
 
   const handleClick = () => {
@@ -44,7 +86,7 @@ export const FileUpload = ({
   };
 
   const { getRootProps, isDragActive } = useDropzone({
-    multiple: false,
+    multiple,
     noClick: true,
     onDrop: handleFileChange,
     onDropRejected: (error) => {
@@ -63,6 +105,7 @@ export const FileUpload = ({
           ref={fileInputRef}
           id="file-upload-handle"
           type="file"
+          multiple={multiple}
           onChange={(e) => handleFileChange(Array.from(e.target.files || []))}
           className="hidden"
         />
@@ -77,13 +120,35 @@ export const FileUpload = ({
             Drag or drop your files here or click to upload
           </p>
           <div className="relative mx-auto mt-10 w-full max-w-xl">
+            {files.length > 0 && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="relative z-40 mb-3 flex items-center justify-between gap-2"
+              >
+                <span className="text-xs font-medium text-neutral-500">
+                  {files.length}{" "}
+                  {files.length === 1
+                    ? "archivo cargado"
+                    : "archivos cargados"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-white px-2.5 py-1 text-xs font-medium text-primary shadow-xs transition-colors hover:bg-secondary"
+                >
+                  <IconTrash className="h-3.5 w-3.5" />
+                  Limpiar carga
+                </button>
+              </div>
+            )}
             {files.length > 0 &&
               files.map((file, idx) => (
                 <motion.div
-                  key={"file" + idx}
+                  key={`${file.name}-${file.lastModified}-${idx}`}
                   layoutId={idx === 0 ? "file-upload" : "file-upload-" + idx}
+                  onClick={(e) => e.stopPropagation()}
                   className={cn(
-                    "relative z-40 mx-auto mt-4 flex w-full flex-col items-start justify-start overflow-hidden rounded-md bg-white p-4 md:h-24 dark:bg-neutral-900",
+                    "relative z-40 mx-auto mt-4 flex w-full cursor-default flex-col items-start justify-start overflow-hidden rounded-md bg-white p-4 md:h-24 dark:bg-neutral-900",
                     "shadow-sm",
                   )}
                 >
@@ -96,14 +161,25 @@ export const FileUpload = ({
                     >
                       {file.name}
                     </motion.p>
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      layout
-                      className="shadow-input w-fit shrink-0 rounded-lg px-2 py-1 text-sm text-neutral-600 dark:bg-neutral-800 dark:text-white"
-                    >
-                      {(file.size / (1024 * 1024)).toFixed(2)} MB
-                    </motion.p>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        layout
+                        className="shadow-input w-fit shrink-0 rounded-lg px-2 py-1 text-sm text-neutral-600 dark:bg-neutral-800 dark:text-white"
+                      >
+                        {(file.size / (1024 * 1024)).toFixed(2)} MB
+                      </motion.p>
+                      <button
+                        type="button"
+                        onClick={(e) => handleRemoveFile(e, idx)}
+                        aria-label={`Quitar ${file.name}`}
+                        title="Quitar archivo"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-white text-neutral-500 transition-colors hover:border-primary/40 hover:bg-secondary hover:text-primary"
+                      >
+                        <IconX className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-2 flex w-full flex-col items-start justify-between text-sm text-neutral-600 md:flex-row md:items-center dark:text-neutral-400">
@@ -113,7 +189,7 @@ export const FileUpload = ({
                       layout
                       className="rounded-md bg-gray-100 px-1 py-0.5 dark:bg-neutral-800"
                     >
-                      {file.type}
+                      {file.type || "archivo"}
                     </motion.p>
 
                     <motion.p
