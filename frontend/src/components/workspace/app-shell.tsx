@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import {
   CheckmarkCircle02Icon,
@@ -12,6 +13,7 @@ import BranchedMenu, {
 } from "@/components/menu/BranchedMenu";
 import { Badge } from "@/components/ui/badge";
 import { CargaView } from "@/components/workspace/carga-view";
+import { EntryLoader } from "@/components/workspace/entry-loader";
 import { ExpedienteGuideView } from "@/components/workspace/expediente-guide-view";
 import { InicioPitchView } from "@/components/workspace/inicio-pitch-view";
 import { ResultadoView } from "@/components/workspace/resultado-view";
@@ -97,12 +99,18 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-white text-foreground flex flex-col md:flex-row">
+      <EntryLoader />
       <aside className="w-full shrink-0 border-b border-border bg-white md:w-72 md:border-r md:border-b-0">
         <div className="flex h-full flex-col px-6 py-7">
           <div className="mb-8 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-sm font-bold tracking-tight text-primary-foreground shadow-xs">
-              3B
-            </div>
+            <Image
+              src="/logo-3b.png"
+              alt="Tiendas 3B"
+              width={42}
+              height={42}
+              priority
+              className="h-10 w-10 shrink-0 object-contain"
+            />
             <div>
               <p className="text-base font-semibold leading-tight text-foreground">
                 Expedientes 3B
