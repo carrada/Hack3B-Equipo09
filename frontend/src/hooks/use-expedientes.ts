@@ -10,8 +10,12 @@ import {
   createExpediente,
   getExpediente,
   listExpedientes,
+  revalidarExpediente,
 } from "@/lib/api";
-import type { CrearExpedienteInput } from "@/lib/contracts";
+import type {
+  CrearExpedienteInput,
+  RevalidarExpedientePayload,
+} from "@/lib/contracts";
 
 export const expedienteKeys = {
   all: ["expedientes"] as const,
@@ -64,6 +68,24 @@ export function useCreateExpediente() {
   return useMutation({
     mutationFn: (input: CrearExpedienteInput) => createExpediente(input),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: expedienteKeys.list() });
+    },
+  });
+}
+
+export function useRevalidarExpediente() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      expedienteId,
+      payload,
+    }: {
+      expedienteId: string;
+      payload: RevalidarExpedientePayload;
+    }) => revalidarExpediente(expedienteId, payload),
+    onSuccess: (data) => {
+      queryClient.setQueryData(expedienteKeys.detail(data.expedienteId), data);
       void queryClient.invalidateQueries({ queryKey: expedienteKeys.list() });
     },
   });

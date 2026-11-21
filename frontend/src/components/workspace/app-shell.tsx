@@ -17,6 +17,14 @@ import { EntryLoader } from "@/components/workspace/entry-loader";
 import { ExpedienteGuideView } from "@/components/workspace/expediente-guide-view";
 import { InicioPitchView } from "@/components/workspace/inicio-pitch-view";
 import { ResultadoView } from "@/components/workspace/resultado-view";
+import type { DocumentoRevision, TipoDocumento } from "@/lib/contracts";
+import {
+  actualizarCampoDocumento,
+  cambiarTipoDocumentoRevision,
+  contarResumenRevision,
+  crearDocumentoRevisionDesdeArchivo,
+  restaurarCampoDocumento,
+} from "@/lib/workspace/review-helpers";
 
 type ViewId = "inicio" | "expediente" | "carga" | "resultado";
 
@@ -52,10 +60,10 @@ const VIEW_META: Record<
       "Guía clara de los 4 tipos documentales mínimos, los campos que se extraen de cada uno y las validaciones cruzadas que contrastan coherencia entre documentos.",
   },
   carga: {
-    badge: "Paso 03 · Ingesta de documentos",
-    title: "Carga del expediente",
+    badge: "Paso 03 · Ingesta y revisión asistida",
+    title: "Carga y ajuste opcional de campos",
     subtitle:
-      "Sube los archivos del inmueble en un solo lugar. Los documentos se mantienen en estado local listos para enviarse al pipeline de 6 agentes.",
+      "Sube uno o varios PDFs del inmueble y, si algún campo no se detecta bien, corrígelo opcionalmente conservando el rastro original de la IA.",
   },
   resultado: {
     badge: "Paso 04 · Dictamen y evidencia",
@@ -76,10 +84,12 @@ function isViewId(value: string): value is ViewId {
 
 export function AppShell() {
   const [activeView, setActiveView] = useState<ViewId>("inicio");
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [reviewDocs, setReviewDocs] = useState<DocumentoRevision[]>([]);
   const [uploadResetKey, setUploadResetKey] = useState(0);
+  const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
 
   const meta = VIEW_META[activeView];
+  const reviewSummary = contarResumenRevision(reviewDocs);
 
   const handleSelect = (value: string) => {
     if (isViewId(value)) {
@@ -89,12 +99,72 @@ export function AppShell() {
 
   const handleFilesAdded = (newFiles: File[]) => {
     if (newFiles.length === 0) return;
-    setUploadedFiles((prev) => [...prev, ...newFiles]);
+    setReviewDocs((prev) => [
+      ...prev,
+      ...newFiles.map((file, idx) =>
+        crearDocumentoRevisionDesdeArchivo(file, prev.length + idx),
+      ),
+    ]);
+    setConfirmedAt(null);
   };
 
   const handleClearFiles = () => {
-    setUploadedFiles([]);
+    setReviewDocs([]);
+    setConfirmedAt(null);
     setUploadResetKey((prev) => prev + 1);
+  };
+
+  const handleChangeDocType = (documentoId: string, tipo: TipoDocumento) => {
+    setReviewDocs((prev) =>
+      prev.map((doc) =>
+        doc.documentoId === documentoId
+          ? cambiarTipoDocumentoRevision(doc, tipo)
+          : doc,
+      ),
+    );
+    setConfirmedAt(null);
+  };
+
+  const handleSaveField = (
+    documentoId: string,
+    clave: string,
+    valor: string,
+  ) => {
+    setReviewDocs((prev) =>
+      prev.map((doc) =>
+        doc.documentoId === documentoId
+          ? actualizarCampoDocumento(doc, clave, valor)
+          : doc,
+      ),
+    );
+    setConfirmedAt(null);
+  };
+
+  const handleRestoreField = (documentoId: string, clave: string) => {
+    setReviewDocs((prev) =>
+      prev.map((doc) =>
+        doc.documentoId === documentoId
+          ? restaurarCampoDocumento(doc, clave)
+          : doc,
+      ),
+    );
+    setConfirmedAt(null);
+  };
+
+  const handleRemoveDoc = (documentoId: string) => {
+    setReviewDocs((prev) =>
+      prev.filter((doc) => doc.documentoId !== documentoId),
+    );
+    setConfirmedAt(null);
+  };
+
+  const handleConfirmForValidation = () => {
+    const timestamp = new Date().toLocaleTimeString("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    setConfirmedAt(timestamp);
   };
 
   return (
@@ -144,11 +214,19 @@ export function AppShell() {
               6 agentes especializados · modo local listo para conectar al
               backend.
             </p>
-            <div className="mt-3 flex items-center justify-between text-xs font-medium text-secondary-foreground">
-              <span>Archivos en sesión</span>
-              <span className="rounded-full bg-white px-2.5 py-0.5 text-primary border border-border">
-                {uploadedFiles.length}
-              </span>
+            <div className="mt-3 flex flex-col gap-1.5 text-xs font-medium text-secondary-foreground">
+              <div className="flex items-center justify-between">
+                <span>Archivos en sesión</span>
+                <span className="rounded-full bg-white px-2.5 py-0.5 text-primary border border-border">
+                  {reviewDocs.length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Correcciones manuales</span>
+                <span className="rounded-full bg-white px-2.5 py-0.5 text-primary border border-border">
+                  {reviewSummary.camposEditados}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -176,14 +254,23 @@ export function AppShell() {
           {activeView === "expediente" && <ExpedienteGuideView />}
           {activeView === "carga" && (
             <CargaView
-              files={uploadedFiles}
+              documentos={reviewDocs}
               resetKey={uploadResetKey}
+              confirmedAt={confirmedAt}
               onFilesAdded={handleFilesAdded}
               onClear={handleClearFiles}
+              onChangeDocType={handleChangeDocType}
+              onSaveField={handleSaveField}
+              onRestoreField={handleRestoreField}
+              onRemoveDoc={handleRemoveDoc}
+              onConfirmForValidation={handleConfirmForValidation}
             />
           )}
           {activeView === "resultado" && (
-            <ResultadoView filesCount={uploadedFiles.length} />
+            <ResultadoView
+              documentos={reviewDocs}
+              confirmedAt={confirmedAt}
+            />
           )}
         </div>
       </main>

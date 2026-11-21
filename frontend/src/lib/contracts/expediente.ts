@@ -185,3 +185,198 @@ export interface CrearExpedienteInput {
   nombreExpediente: string;
   archivos: File[];
 }
+
+export const EstadoCampoExtraidoSchema = z.enum([
+  "detectado",
+  "dudoso",
+  "no_detectado",
+  "editado_manual",
+]);
+export type EstadoCampoExtraido = z.infer<typeof EstadoCampoExtraidoSchema>;
+
+export const CampoExtraidoSchema = z.object({
+  clave: z.string().min(1),
+  etiqueta: z.string().min(1),
+  valorDetectado: z.string().nullable(),
+  valorActual: z.string().nullable(),
+  confianza: z.number().min(0).max(1).nullable(),
+  estado: EstadoCampoExtraidoSchema,
+  editadoManualmente: z.boolean().default(false),
+  evidencia: EvidenciaSchema.nullable().optional(),
+});
+export type CampoExtraido = z.infer<typeof CampoExtraidoSchema>;
+
+export const DocumentoRevisionSchema = z.object({
+  documentoId: z.string().min(1),
+  nombreArchivo: z.string().min(1),
+  tipoDetectado: TipoDocumentoSchema,
+  tipoSeleccionado: TipoDocumentoSchema,
+  confianzaClasificacion: z.number().min(0).max(1).nullable(),
+  tamanoBytes: z.number().nonnegative().optional(),
+  campos: z.array(CampoExtraidoSchema),
+});
+export type DocumentoRevision = z.infer<typeof DocumentoRevisionSchema>;
+
+export const OverrideCampoInputSchema = z.object({
+  clave: z.string().min(1),
+  valorOriginal: z.string().nullable(),
+  valorCorregido: z.string(),
+});
+export type OverrideCampoInput = z.infer<typeof OverrideCampoInputSchema>;
+
+export const RevalidarExpedientePayloadSchema = z.object({
+  expedienteId: z.string().min(1).optional(),
+  documentos: z.array(
+    z.object({
+      documentoId: z.string().min(1),
+      nombreArchivo: z.string().min(1),
+      tipoDocumento: TipoDocumentoSchema,
+      overrides: z.array(OverrideCampoInputSchema),
+    }),
+  ),
+});
+export type RevalidarExpedientePayload = z.infer<
+  typeof RevalidarExpedientePayloadSchema
+>;
+
+export interface DefinicionCampoDocumento {
+  clave: string;
+  etiqueta: string;
+  placeholder: string;
+}
+
+export const CAMPOS_POR_TIPO_DOCUMENTO: Record<
+  TipoDocumento,
+  readonly DefinicionCampoDocumento[]
+> = {
+  escritura: [
+    {
+      clave: "propietario",
+      etiqueta: "Propietario o titular",
+      placeholder: "Nombre completo o razón social del titular",
+    },
+    {
+      clave: "direccion",
+      etiqueta: "Dirección del inmueble",
+      placeholder: "Calle, número, colonia, municipio y estado",
+    },
+    {
+      clave: "superficie_m2",
+      etiqueta: "Superficie del terreno (m²)",
+      placeholder: "Ej. 450.00 m²",
+    },
+    {
+      clave: "identificacion_predio",
+      etiqueta: "Identificación o folio del inmueble",
+      placeholder: "Folio real, lote, manzana o escritura",
+    },
+  ],
+  predial: [
+    {
+      clave: "propietario",
+      etiqueta: "Propietario o contribuyente",
+      placeholder: "Nombre o razón social en boleta predial",
+    },
+    {
+      clave: "direccion",
+      etiqueta: "Dirección del inmueble",
+      placeholder: "Domicilio registrado en el padrón predial",
+    },
+    {
+      clave: "cuenta_predial",
+      etiqueta: "Cuenta o clave predial",
+      placeholder: "Número de cuenta o clave catastral",
+    },
+    {
+      clave: "superficie_m2",
+      etiqueta: "Superficie registrada (m²)",
+      placeholder: "Ej. 450.00 m²",
+    },
+  ],
+  alineamiento_numero_oficial: [
+    {
+      clave: "direccion",
+      etiqueta: "Dirección oficial del inmueble",
+      placeholder: "Domicilio oficial asignado por la autoridad",
+    },
+    {
+      clave: "numero_oficial",
+      etiqueta: "Número oficial asignado",
+      placeholder: "Número exterior / oficial",
+    },
+    {
+      clave: "identificacion_predio",
+      etiqueta: "Identificación del predio",
+      placeholder: "Clave catastral, lote o referencia oficial",
+    },
+    {
+      clave: "alineamiento",
+      etiqueta: "Alineamiento determinado",
+      placeholder: "Restricción frontal o dictamen de alineamiento",
+    },
+    {
+      clave: "vigencia",
+      etiqueta: "Fecha de emisión y vigencia",
+      placeholder: "Fecha de emisión / vigencia del documento",
+    },
+    {
+      clave: "autoridad_emisora",
+      etiqueta: "Autoridad emisora",
+      placeholder: "Dependencia municipal o estatal emisora",
+    },
+  ],
+  uso_de_suelo: [
+    {
+      clave: "direccion",
+      etiqueta: "Dirección e identificación del inmueble",
+      placeholder: "Domicilio registrado en licencia o constancia",
+    },
+    {
+      clave: "uso_autorizado",
+      etiqueta: "Uso de suelo autorizado",
+      placeholder: "Clasificación o giro autorizado",
+    },
+    {
+      clave: "compatibilidad_comercial",
+      etiqueta: "Compatibilidad con giro comercial",
+      placeholder: "Compatible / Condicionado / No compatible",
+    },
+    {
+      clave: "restricciones",
+      etiqueta: "Restricciones o condicionantes",
+      placeholder: "Cajones, horarios, densidad o condicionantes",
+    },
+    {
+      clave: "superficie_m2",
+      etiqueta: "Superficie aplicable (m²)",
+      placeholder: "Superficie cubierta por la autorización",
+    },
+    {
+      clave: "vigencia",
+      etiqueta: "Fecha de emisión y vigencia",
+      placeholder: "Fecha de emisión / vencimiento",
+    },
+    {
+      clave: "autoridad_emisora",
+      etiqueta: "Autoridad emisora",
+      placeholder: "Dirección de Desarrollo Urbano o equivalente",
+    },
+  ],
+  otro: [
+    {
+      clave: "propietario",
+      etiqueta: "Titular o referencia",
+      placeholder: "Persona o entidad referida en el documento",
+    },
+    {
+      clave: "direccion",
+      etiqueta: "Dirección del inmueble",
+      placeholder: "Domicilio mencionado en el archivo",
+    },
+    {
+      clave: "observacion",
+      etiqueta: "Dato relevante",
+      placeholder: "Información adicional para el equipo legal",
+    },
+  ],
+};

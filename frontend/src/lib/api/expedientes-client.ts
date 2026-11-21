@@ -9,6 +9,7 @@ import {
   HealthResponse,
   HealthResponseSchema,
   ListaExpedientesResponseSchema,
+  RevalidarExpedientePayload,
 } from "@/lib/contracts";
 import {
   mockCreateExpediente,
@@ -21,6 +22,8 @@ export const API_ENDPOINTS = {
   health: "/api/v1/health",
   expedientes: "/api/v1/expedientes",
   expedienteById: (id: string) => `/api/v1/expedientes/${encodeURIComponent(id)}`,
+  revalidarExpediente: (id: string) =>
+    `/api/v1/expedientes/${encodeURIComponent(id)}/revalidar`,
 } as const;
 
 export async function checkBackendHealth(
@@ -94,6 +97,34 @@ export async function createExpediente(
     method: "POST",
     body: formData,
     schema: CrearExpedienteResponseSchema,
+    signal,
+    timeoutMs: 60_000,
+  });
+}
+
+export async function revalidarExpediente(
+  expedienteId: string,
+  payload: RevalidarExpedientePayload,
+  signal?: AbortSignal,
+): Promise<ExpedienteAnalisis> {
+  if (env.useMocks) {
+    const existing = await mockGetExpediente(expedienteId);
+    if (!existing) {
+      throw new ApiClientError(`Expediente ${expedienteId} no encontrado.`, {
+        status: 404,
+        code: "NOT_FOUND",
+      });
+    }
+    return {
+      ...existing,
+      actualizadoEn: new Date().toISOString(),
+    };
+  }
+
+  return apiRequest(API_ENDPOINTS.revalidarExpediente(expedienteId), {
+    method: "PATCH",
+    body: payload,
+    schema: ExpedienteAnalisisSchema,
     signal,
     timeoutMs: 60_000,
   });

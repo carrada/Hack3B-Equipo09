@@ -7,6 +7,7 @@ import {
   Eye,
   FileSearch,
   GitCompareArrows,
+  PencilLine,
   XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { TIPO_DOCUMENTO_LABELS, type DocumentoRevision } from "@/lib/contracts";
+import { contarResumenRevision } from "@/lib/workspace/review-helpers";
 
 const AGENT_PIPELINE_SLOTS = [
   "01 · Clasificador Documental",
@@ -27,7 +30,25 @@ const AGENT_PIPELINE_SLOTS = [
   "06 · Dictaminador y Explicador Legal",
 ] as const;
 
-export function ResultadoView({ filesCount }: { filesCount: number }) {
+export function ResultadoView({
+  documentos,
+  confirmedAt,
+}: {
+  documentos: DocumentoRevision[];
+  confirmedAt: string | null;
+}) {
+  const summary = contarResumenRevision(documentos);
+  const manualEdits = documentos.flatMap((doc) =>
+    doc.campos
+      .filter((campo) => campo.editadoManualmente)
+      .map((campo) => ({
+        documentoId: doc.documentoId,
+        nombreArchivo: doc.nombreArchivo,
+        tipoDocumento: doc.tipoSeleccionado,
+        campo,
+      })),
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <Card className="border-primary/25 bg-secondary/40">
@@ -42,17 +63,36 @@ export function ResultadoView({ filesCount }: { filesCount: number }) {
                 para que gestor y abogado decidan en segundos.
               </CardDescription>
             </div>
-            <Badge variant="outline" className="border-primary/40 bg-white text-primary">
-              En espera de análisis
+            <Badge
+              variant="outline"
+              className="border-primary/40 bg-white text-primary"
+            >
+              {confirmedAt ? "Listo para backend" : "En espera de análisis"}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Todavía no se ha ejecutado un análisis contra el backend de 6
-            agentes. Archivos listos en esta sesión local:{" "}
-            <span className="font-semibold text-foreground">{filesCount}</span>.
-          </p>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted-foreground">
+            <span>
+              Documentos en sesión:{" "}
+              <span className="font-semibold text-foreground">
+                {documentos.length}
+              </span>
+            </span>
+            <span>
+              Campos con dato:{" "}
+              <span className="font-semibold text-foreground">
+                {summary.camposCompletos}/{summary.totalCampos}
+              </span>
+            </span>
+            <span>
+              Correcciones manuales:{" "}
+              <span className="font-semibold text-foreground">
+                {summary.camposEditados}
+              </span>
+            </span>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-emerald-200 bg-white p-3">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
@@ -88,6 +128,54 @@ export function ResultadoView({ filesCount }: { filesCount: number }) {
         </CardContent>
       </Card>
 
+      {manualEdits.length > 0 && (
+        <Card className="border-border bg-white">
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <PencilLine className="h-4 w-4 text-primary" />
+                Auditoría de correcciones manuales ({manualEdits.length})
+              </CardTitle>
+              <Badge variant="secondary" className="border-border text-primary">
+                Trazabilidad Human-in-the-Loop
+              </Badge>
+            </div>
+            <CardDescription>
+              El equipo legal siempre distingue qué valor extrajo la IA y qué
+              valor corrigió el usuario antes de validar.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {manualEdits.map(({ documentoId, nombreArchivo, tipoDocumento, campo }) => (
+                <li
+                  key={`${documentoId}-${campo.clave}`}
+                  className="flex flex-col gap-1.5 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-semibold text-foreground">
+                      {campo.etiqueta}{" "}
+                      <span className="font-normal text-muted-foreground">
+                        · {TIPO_DOCUMENTO_LABELS[tipoDocumento]} ({nombreArchivo})
+                      </span>
+                    </p>
+                    <p className="mt-0.5 text-muted-foreground">
+                      IA: {campo.valorDetectado ?? "Sin detectar"} → Usuario:{" "}
+                      <span className="font-semibold text-foreground">
+                        {campo.valorActual ?? "Vacío"}
+                      </span>
+                    </p>
+                  </div>
+                  <Badge variant="secondary" className="w-fit border-border text-primary">
+                    Override activo
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border bg-white">
           <CardHeader>
@@ -102,8 +190,8 @@ export function ResultadoView({ filesCount }: { filesCount: number }) {
           </CardHeader>
           <CardContent className="text-xs leading-relaxed text-muted-foreground">
             Aquí se mostrarán el estado de los 4 tipos documentales, los datos
-            extraídos por campo y cada criterio validado contra la guía oficial
-            del reto.
+            extraídos (con sus overrides manuales si los hubo) y cada criterio
+            validado contra la guía oficial del reto.
           </CardContent>
         </Card>
 
@@ -132,7 +220,10 @@ export function ResultadoView({ filesCount }: { filesCount: number }) {
               <Eye className="h-4 w-4 text-primary" />
               Nivel 3 · Transparencia de los 6 agentes y evidencia
             </CardTitle>
-            <Badge variant="secondary" className="border-border text-secondary-foreground">
+            <Badge
+              variant="secondary"
+              className="border-border text-secondary-foreground"
+            >
               <FileSearch className="h-3.5 w-3.5" />
               Auditoría abierta
             </Badge>
